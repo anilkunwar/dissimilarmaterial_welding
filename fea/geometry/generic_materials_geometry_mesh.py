@@ -156,9 +156,9 @@ def main():
     
     with st.sidebar:
         st.header("Geometry Parameters")
-        lx = st.number_input("Length (lx)", min_value=1.0, value=200.0, step=10.0)
+        lx = st.number_input("Length (lx)", min_value=1.0, value=250.0, step=10.0)
         ly = st.number_input("Width (ly)", min_value=1.0, value=50.0, step=5.0)
-        lz = st.number_input("Height (lz)", min_value=0.1, value=2.0, step=0.5)
+        lz = st.number_input("Height (lz)", min_value=0.1, value=10.0, step=0.5)
         
         if HAS_GMSH:
             st.success("✅ Gmsh available - full meshing capabilities")
