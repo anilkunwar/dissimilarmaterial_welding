@@ -1,6 +1,4 @@
 streamlit
-gmsh
 numpy
-meshio 
-pyvista 
-stpyvista 
+matplotlib
+meshio
