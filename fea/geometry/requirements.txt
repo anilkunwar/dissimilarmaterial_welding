@@ -4,3 +4,4 @@ matplotlib
 meshio
 plotly
 gmsh
+scipy
