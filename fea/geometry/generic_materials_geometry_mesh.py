@@ -1,312 +1,228 @@
 # app.py
 import streamlit as st
 import numpy as np
-import matplotlib.pyplot as plt
-import tempfile
 import os
-import io
-import base64
-from matplotlib.patches import Rectangle
-import meshio
+import tempfile
+import sys
 
-st.set_page_config(
-    page_title="ParallelGroup Slab Generator",
-    page_icon="📐",
-    layout="wide"
-)
-
-st.title("ParallelGroup Slab Generator (Cloud Compatible)")
-st.markdown("""
-This app generates a mesh of two adjacent slabs with all the required physical groups.
-**No system dependencies required** - works in all cloud environments.
-- **Slab 1 (Solid_1front)**: `(0,0,0)` → `(lx, ly, lz)`
-- **Slab 2 (Solid_2back)**:  `(0,ly,0)` → `(lx, 2·ly, lz)`
-""")
-
-# Check if meshio is available, if not, offer a simple download option
-HAS_MESHIO = False
+# Try to import gmsh - will fail in cloud environments
+HAS_GMSH = False
 try:
-    import meshio
-    HAS_MESHIO = True
-except ImportError:
-    st.warning("Meshio not available. Will generate a simple text-based mesh file.")
+    import gmsh
+    HAS_GMSH = True
+except Exception as e:
+    st.warning(f"Gmsh not available (running in cloud?): {str(e)}")
+    HAS_GMSH = False
 
-def create_mesh_without_gmsh(lx, ly, lz, resolution=10):
+def generate_fallback_mesh(lx, ly, lz):
     """
-    Create a simple hexahedral mesh without Gmsh dependencies
-    Returns a meshio Mesh object or simple data structure
+    Generate a simple structured hex mesh for two slabs when Gmsh is unavailable.
+    Outputs Gmsh ASCII format (v2.2) with physical groups matching the original names.
     """
-    # Calculate divisions based on resolution
-    div_x = max(2, int(resolution * lx / max(lx, ly, lz)))
-    div_y = max(2, int(resolution * ly / max(lx, ly, lz)))
-    div_z = max(2, int(resolution * lz / max(lx, ly, lz)))
+    # Calculate coordinates
+    y_interface = ly
+    y_max = 2 * ly
     
-    # Create mesh points
-    points = []
-    for k in range(div_z + 1):
-        z = k * lz / div_z
-        for j in range(2 * div_y + 1):  # Two slabs stacked in Y
-            y = j * ly / div_y
-            for i in range(div_x + 1):
-                x = i * lx / div_x
-                points.append([x, y, z])
+    # Node coordinates (12 nodes total)
+    nodes = [
+        [0, 0, 0],       # 1
+        [lx, 0, 0],      # 2
+        [lx, y_interface, 0],  # 3
+        [0, y_interface, 0],   # 4
+        [0, 0, lz],      # 5
+        [lx, 0, lz],     # 6
+        [lx, y_interface, lz], # 7
+        [0, y_interface, lz],  # 8
+        [0, y_max, 0],   # 9
+        [lx, y_max, 0],  # 10
+        [lx, y_max, lz], # 11
+        [0, y_max, lz]   # 12
+    ]
     
-    # Create hexahedral cells
-    cells = []
-    for k in range(div_z):
-        for j in range(2 * div_y):
-            for i in range(div_x):
-                # Get the 8 corners of the hexahedron
-                n0 = k * (div_x + 1) * (2 * div_y + 1) + j * (div_x + 1) + i
-                n1 = n0 + 1
-                n2 = n0 + (div_x + 1) + 1
-                n3 = n0 + (div_x + 1)
-                n4 = n0 + (div_x + 1) * (2 * div_y + 1)
-                n5 = n4 + 1
-                n6 = n4 + (div_x + 1) + 1
-                n7 = n4 + (div_x + 1)
-                
-                cells.append([n0, n1, n2, n3, n4, n5, n6, n7])
+    # Element connectivity (2 hexahedrons)
+    elements = [
+        [1, 2, 3, 4, 5, 6, 7, 8],   # Solid_1front
+        [4, 3, 10, 9, 8, 7, 11, 12] # Solid_2back
+    ]
     
-    # Create cell blocks
-    hex_cells = [("hexahedron", np.array(cells))]
-    
-    # Create physical groups (matching the required names)
-    cell_data = {
-        "gmsh:physical": [np.zeros(len(cells), dtype=int)],
-        "gmsh:geometrical": [np.zeros(len(cells), dtype=int)]
+    # Physical group definitions (matching original SALOME names)
+    physical_groups = {
+        "Solid_1front": {"dim": 3, "entities": [1]},
+        "Solid_2back": {"dim": 3, "entities": [2]},
+        "Face_1leftfront": {"dim": 2, "nodes": [1, 4, 8, 5]},
+        "Face_2leftback": {"dim": 2, "nodes": [4, 9, 12, 8]},
+        "Face_3frontfront": {"dim": 2, "nodes": [1, 2, 6, 5]},
+        "Face_4bottomfront": {"dim": 2, "nodes": [1, 2, 3, 4]},
+        "Face_5topfront": {"dim": 2, "nodes": [5, 6, 7, 8]},
+        "Face_6interfacefront": {"dim": 2, "nodes": [4, 3, 7, 8]},
+        "Face_7bottomback": {"dim": 2, "nodes": [4, 3, 10, 9]},
+        "Face_8topback": {"dim": 2, "nodes": [8, 7, 11, 12]},
+        "Face_9backback": {"dim": 2, "nodes": [9, 10, 11, 12]},
+        "Face_10rightfront": {"dim": 2, "nodes": [2, 3, 7, 6]},
+        "Face_11rightback": {"dim": 2, "nodes": [3, 10, 11, 7]}
     }
     
-    # Create field data for named groups
-    field_data = {
-        "Solid_1front": np.array([1, 3]),  # 3D entity
-        "Solid_2back": np.array([2, 3]),   # 3D entity
-        "Face_1leftfront": np.array([1, 2]), 
-        "Face_2leftback": np.array([2, 2]),
-        "Face_3frontfront": np.array([3, 2]),
-        "Face_4bottomfront": np.array([4, 2]),
-        "Face_5topfront": np.array([5, 2]),
-        "Face_6interfacefront": np.array([6, 2]),
-        "Face_7bottomback": np.array([7, 2]),
-        "Face_8topback": np.array([8, 2]),
-        "Face_9backback": np.array([9, 2]),
-        "Face_10rightfront": np.array([10, 2]),
-        "Face_11rightback": np.array([11, 2])
-    }
+    # Build Gmsh ASCII format (v2.2)
+    output = []
+    output.append("$MeshFormat")
+    output.append("2.2 0 8")
+    output.append("$EndMeshFormat")
     
-    # If meshio is available, create a proper mesh object
-    if HAS_MESHIO:
-        mesh = meshio.Mesh(
-            points=np.array(points),
-            cells=hex_cells,
-            cell_data=cell_data,
-            field_data=field_data
-        )
-        return mesh
-    else:
-        # Return simple data structure for basic export
-        return {
-            "points": np.array(points),
-            "cells": cells,
-            "field_data": field_data
-        }
+    # Nodes section
+    output.append("$Nodes")
+    output.append(str(len(nodes)))
+    for i, (x, y, z) in enumerate(nodes, 1):
+        output.append(f"{i} {x} {y} {z}")
+    output.append("$EndNodes")
+    
+    # Elements section
+    output.append("$Elements")
+    # Count: 2 volumes + 11 surfaces = 13 elements
+    output.append("13")
+    
+    # Volume elements (hexahedrons = type 5)
+    for i, elem in enumerate(elements, 1):
+        # Format: elm-number elm-type number-of-tags <tags> node-indices
+        output.append(f"{i} 5 2 {i} {i} " + " ".join(map(str, elem)))
+    
+    # Surface elements (quadrangles = type 3)
+    for i, (name, group) in enumerate(physical_groups.items(), start=3):
+        if group["dim"] == 2:
+            # Create element ID for this surface
+            elem_id = i
+            # Physical group ID (we'll use the index)
+            phys_id = i - 2
+            output.append(f"{elem_id} 3 2 {phys_id} {phys_id} " + " ".join(map(str, group["nodes"])))
+    
+    output.append("$EndElements")
+    
+    # Physical names section
+    output.append("$PhysicalNames")
+    output.append(str(len(physical_groups)))
+    for i, name in enumerate(physical_groups.keys(), 1):
+        dim = physical_groups[name]["dim"]
+        output.append(f"{dim} {i} \"{name}\"")
+    output.append("$EndPhysicalNames")
+    
+    return "\n".join(output)
 
-def plot_2d_cross_section(lx, ly, lz):
-    """Create a 2D cross-section visualization that works without PyVista"""
-    fig, ax = plt.subplots(figsize=(10, 6))
+def create_geometry_with_gmsh(lx, ly, lz):
+    """Full Gmsh implementation (used when available)"""
+    gmsh.initialize()
+    gmsh.model.add("TwoSlabs")
     
-    # Plot slab 1 (front)
-    rect1 = Rectangle((0, 0), lx, ly, fill=True, color='skyblue', alpha=0.6, 
-                     edgecolor='blue', label='Solid_1front')
-    ax.add_patch(rect1)
+    # Create geometry
+    box1 = gmsh.model.occ.addBox(0, 0, 0, lx, ly, lz)
+    box2 = gmsh.model.occ.addBox(0, ly, 0, lx, ly, lz)
+    gmsh.model.occ.synchronize()
     
-    # Plot slab 2 (back)
-    rect2 = Rectangle((0, ly), lx, ly, fill=True, color='lightgreen', alpha=0.6, 
-                     edgecolor='green', label='Solid_2back')
-    ax.add_patch(rect2)
+    # Create physical groups (matching SALOME names)
+    volumes = gmsh.model.getEntities(3)
+    gmsh.model.addPhysicalGroup(3, [volumes[0][1]], name="Solid_1front")
+    gmsh.model.addPhysicalGroup(3, [volumes[1][1]], name="Solid_2back")
     
-    # Mark interface
-    ax.plot([0, lx], [ly, ly], 'r--', linewidth=2, label='Face_6interfacefront')
+    # Get boundary entities for faces
+    all_faces = gmsh.model.getEntities(2)
     
-    # Set labels and title
-    ax.set_xlabel('X (length)')
-    ax.set_ylabel('Y (width)')
-    ax.set_title('2D Cross-Section (Z-midplane)')
-    ax.set_aspect('equal')
-    ax.set_xlim(-0.1*lx, 1.1*lx)
-    ax.set_ylim(-0.1*ly, 2.1*ly)
-    ax.grid(True, alpha=0.3)
-    ax.legend(loc='upper right')
+    # Create physical groups for faces
+    face_names = [
+        "Face_1leftfront", "Face_2leftback", "Face_3frontfront",
+        "Face_4bottomfront", "Face_5topfront", "Face_6interfacefront",
+        "Face_7bottomback", "Face_8topback", "Face_9backback",
+        "Face_10rightfront", "Face_11rightback"
+    ]
     
-    # Add annotations for faces
-    ax.text(lx/2, ly/2, 'Solid_1front', ha='center', va='center', fontsize=10)
-    ax.text(lx/2, 1.5*ly, 'Solid_2back', ha='center', va='center', fontsize=10)
+    for i, name in enumerate(face_names, 1):
+        if i-1 < len(all_faces):
+            gmsh.model.addPhysicalGroup(2, [all_faces[i-1][1]], tag=i, name=name)
     
-    return fig
-
-def export_mesh(mesh_data, format_name="msh"):
-    """Export mesh data to various formats without Gmsh dependencies"""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        filename = f"two_slabs.{format_name}"
-        filepath = os.path.join(tmpdir, filename)
-        
-        if HAS_MESHIO:
-            # Use meshio for proper export
-            if format_name == "msh":
-                mesh_data.write(filepath, file_format="gmsh22")
-            elif format_name == "vtk":
-                mesh_data.write(filepath, file_format="vtk")
-            elif format_name == "vtu":
-                mesh_data.write(filepath, file_format="vtu")
-            elif format_name == "xdmf":
-                mesh_data.write(filepath, file_format="xdmf")
-            else:
-                mesh_data.write(filepath, file_format="vtk")
-        else:
-            # Fallback to simple text export
-            with open(filepath, 'w') as f:
-                f.write("# Simple mesh export (no meshio available)\n")
-                f.write(f"# Dimensions: lx={mesh_data['points'][0][0]}, ly={mesh_data['points'][0][1]/2}, lz={mesh_data['points'][0][2]}\n")
-                f.write(f"# Nodes: {len(mesh_data['points'])}\n")
-                f.write(f"# Elements: {len(mesh_data['cells'])}\n")
-                f.write("# Physical groups defined:\n")
-                for name in mesh_data['field_data'].keys():
-                    f.write(f"# - {name}\n")
-        
-        # Read file content for download
-        with open(filepath, 'rb') as f:
-            return f.read(), filename
+    # Mesh generation
+    gmsh.option.setNumber("Mesh.MeshSizeFactor", 0.5)
+    gmsh.model.mesh.generate(3)
+    gmsh.model.mesh.optimize("Netgen")
+    
+    # Get mesh data
+    return gmsh.write("")
 
 def main():
-    # Sidebar for parameters
+    st.title("ParallelGroup Slab Geometry Generator")
+    st.markdown("""
+    Generate 3D mesh of two adjacent slabs with named physical groups.
+    - **Slab 1 (front)**: `(0,0,0)` → `(lx, ly, lz)`
+    - **Slab 2 (back)**:  `(0,ly,0)` → `(lx, 2·ly, lz)`
+    
+    Works in cloud environments (no Gmsh required)!
+    """)
+    
     with st.sidebar:
-        st.header("PropertyParams")
-        
-        # Dimensions input
+        st.header("Geometry Parameters")
         lx = st.number_input("Length (lx)", min_value=1.0, value=200.0, step=10.0)
         ly = st.number_input("Width (ly)", min_value=1.0, value=50.0, step=5.0)
         lz = st.number_input("Height (lz)", min_value=0.1, value=2.0, step=0.5)
         
-        # Mesh density
-        resolution = st.slider("Mesh Density", 1, 20, 5, 
-                             help="Higher values = finer mesh")
-        
-        # Export format
-        export_format = st.selectbox("Export Format", ["msh", "vtk", "vtu", "xdmf", "txt"])
+        if HAS_GMSH:
+            st.success("✅ Gmsh available - full meshing capabilities")
+        else:
+            st.warning("⚠️ Running in cloud mode - using simplified mesh")
     
-    # Create two columns - visualization on left, statistics on right
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.subheader("2D Cross-Section View")
-        fig = plot_2d_cross_section(lx, ly, lz)
-        st.pyplot(fig)
-    
-    with col2:
-        st.subheader("PropertyParams")
-        st.markdown(f"""
-        **Dimensions:**
-        - Length (X): {lx}
-        - Width (Y): {2*ly} (total)
-        - Height (Z): {lz}
-        
-        **Physical Groups:**
-        - 2 Volumes: Solid_1front, Solid_2back
-        - 11 Faces (including interface)
-        """)
-        
-        # Show physical groups list
-        with st.expander("Full List of Physical Groups"):
-            st.markdown("""
-            **Volumes:**
-            - Solid_1front
-            - Solid_2back
-            
-            **Faces:**
-            - Face_1leftfront
-            - Face_2leftback
-            - Face_3frontfront
-            - Face_4bottomfront
-            - Face_5topfront
-            - Face_6interfacefront (interface)
-            - Face_7bottomback
-            - Face_8topback
-            - Face_9backback
-            - Face_10rightfront
-            - Face_11rightback
-            """)
-    
-    # Generate button
     if st.button("🚀 Generate Mesh", type="primary"):
-        with st.spinner("Creating mesh data..."):
-            # Create the mesh
-            mesh_data = create_mesh_without_gmsh(lx, ly, lz, resolution)
+        with st.spinner("Generating geometry and mesh..."):
+            try:
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    mesh_path = os.path.join(tmpdir, "two_slabs.msh")
+                    
+                    if HAS_GMSH:
+                        # Use full Gmsh implementation
+                        mesh_data = create_geometry_with_gmsh(lx, ly, lz)
+                        with open(mesh_path, "w") as f:
+                            f.write(mesh_data)
+                    else:
+                        # Use fallback pure-Python implementation
+                        mesh_data = generate_fallback_mesh(lx, ly, lz)
+                        with open(mesh_path, "w") as f:
+                            f.write(mesh_data)
+                    
+                    # Provide download button
+                    with open(mesh_path, "rb") as f:
+                        st.download_button(
+                            label="📥 Download Gmsh Mesh File (.msh)",
+                            data=f.read(),
+                            file_name="two_slabs.msh",
+                            mime="application/octet-stream",
+                            help="Compatible with Code_Aster, CalculiX, and other FEM solvers"
+                        )
+                    
+                    # Display mesh info
+                    st.success("✅ Mesh generated successfully!")
+                    st.info(f"""
+                    **Mesh Details:**
+                    - Domain size: {lx} × {2*ly} × {lz}
+                    - Elements: {'2 hexahedrons (fallback)' if not HAS_GMSH else 'Tetrahedral (full Gmsh)'}
+                    - Physical groups: 2 volumes + 11 faces
+                    """)
+                    
+                    # Show preview of physical groups
+                    with st.expander("📋 Physical Group Names (matching SALOME)"):
+                        st.markdown("""
+                        **Volumes:**
+                        - `Solid_1front`
+                        - `Solid_2back`
+                        
+                        **Faces:**
+                        - `Face_1leftfront`, `Face_2leftback`
+                        - `Face_3frontfront`, `Face_9backback`
+                        - `Face_4bottomfront`, `Face_7bottomback`
+                        - `Face_5topfront`, `Face_8topback`
+                        - `Face_6interfacefront` (internal interface)
+                        - `Face_10rightfront`, `Face_11rightback`
+                        """)
             
-            # Get statistics
-            if HAS_MESHIO:
-                num_points = len(mesh_data.points)
-                num_cells = sum(len(cells.data) for cells in mesh_data.cells)
-            else:
-                num_points = len(mesh_data['points'])
-                num_cells = len(mesh_data['cells'])
-            
-            # Display statistics
-            st.subheader("📊 Mesh Statistics")
-            col_stats1, col_stats2, col_stats3 = st.columns(3)
-            with col_stats1:
-                st.metric("Nodes", f"{num_points:,}")
-            with col_stats2:
-                st.metric("Elements", f"{num_cells:,}")
-            with col_stats3:
-                st.metric("Physical Groups", "13")
-            
-            # Export section
-            st.subheader("📥 Download Mesh")
-            
-            # Generate file for download
-            file_data, filename = export_mesh(mesh_data, export_format)
-            
-            # Determine MIME type
-            mime_types = {
-                "msh": "application/octet-stream",
-                "vtk": "application/vnd.vtk",
-                "vtu": "application/vnd.vtu",
-                "xdmf": "application/xdmf+xml",
-                "txt": "text/plain"
-            }
-            mime_type = mime_types.get(export_format, "application/octet-stream")
-            
-            st.download_button(
-                label=f"Download {filename}",
-                data=file_data,
-                file_name=filename,
-                mime=mime_type,
-                use_container_width=True
-            )
-            
-            st.success("✅ Mesh generated successfully!")
-            
-            # Additional information
-            with st.expander("ℹ️ About this mesh"):
-                st.markdown("""
-                This mesh contains all the physical groups required for your simulation:
-                
-                - **Two volumes** with material properties
-                - **Interface face** (Face_6interfacefront) for coupling conditions
-                - **Boundary faces** for applying constraints and loads
-                
-                The mesh is compatible with most FEM solvers. For best results:
-                - Use format `.msh` for Code_Aster or GetFEM
-                - Use format `.vtk` or `.vtu` for ParaView visualization
-                - Use format `.xdmf` for FEniCS or deal.II
-                
-                **Note:** This is a hexahedral mesh generated without Gmsh dependencies. 
-                For tetrahedral meshes or more complex geometries, run locally with Gmsh installed.
-                """)
-    
-    # Footer information
+            except Exception as e:
+                st.error(f"❌ Error during mesh generation: {str(e)}")
+                st.exception(e)
+
     st.markdown("---")
-    st.caption("✅ This app works in all cloud environments without system dependencies")
+    st.caption("💡 **Tip**: For complex geometries, run locally with Gmsh installed. This cloud version provides a simplified but functional mesh.")
 
 if __name__ == "__main__":
     main()
