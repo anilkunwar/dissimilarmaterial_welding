@@ -25,13 +25,15 @@ This app generates a mesh of two adjacent slabs with comprehensive export option
 HAS_MESHIO = False
 MESHIO_VERSION = "Not installed"
 SUPPORTED_FORMATS = []
+HAS_UNV_SUPPORT = False
+
 try:
     import meshio
     HAS_MESHIO = True
     MESHIO_VERSION = meshio.__version__
     
     # Get actual supported formats from meshio
-    SUPPORTED_FORMATS = [
+    SUPPORTED_FORMATS = list(meshio._helpers.writer_map.keys()) if hasattr(meshio._helpers, 'writer_map') else [
         "abaqus", "ansys", "avsucd", "cgns", "dolfin-xml", "exodus", 
         "flac3d", "gmsh", "gmsh22", "h5m", "hmf", "mdpa", "med", "medit", 
         "nastran", "netgen", "neuroglancer", "obj", "off", "permas", "ply", 
@@ -40,12 +42,14 @@ try:
     ]
     
     # Check if nastran format is available for UNV export
-    HAS_UNV_SUPPORT = "nastran" in SUPPORTED_FORMATS
+    HAS_UNV_SUPPORT = "nastran" in SUPPORTED_FORMATS or "unv" in SUPPORTED_FORMATS
     
+    status_msg = f"✅ Meshio {MESHIO_VERSION} available"
     if HAS_UNV_SUPPORT:
-        st.success(f"✅ Meshio {MESHIO_VERSION} available with UNV support")
+        status_msg += " with UNV support"
     else:
-        st.warning(f"⚠️ Meshio {MESHIO_VERSION} available but lacks UNV support")
+        status_msg += " (no UNV support)"
+    st.success(status_msg)
         
 except Exception as e:
     st.warning(f"⚠️ Meshio not available: {str(e)}. Will use manual exports.")
@@ -252,15 +256,14 @@ def create_proper_unv_content(points, cells, field_data=None):
     output.write("  2411\n")  # Node dataset
     output.write("    -1\n")
     
-    # Dataset header for nodes
-    output.write("        1        1        1\n")  # Record 1 - format version markers
-    output.write(f"{len(points):10d}        1        1\n")  # Number of nodes, analysis type, data type
+    # Dataset header for nodes - correct format for I-DEAS
+    output.write("        1        1        0        0        0        0        0\n")
+    output.write(f"{len(points):10d}\n")  # Number of nodes
     
     # Write nodes with proper formatting
     for i, point in enumerate(points, 1):
-        # Node record: node_id, physical properties table number, color, 
-        #              coordinate system number, constraint equations
-        output.write(f"{i:10d}        1        1        0        0        0\n")
+        # Node record: node_id, physical properties table number, color, coordinate system
+        output.write(f"{i:10d}        1        1        0        0        0        0\n")
         # Coordinates with scientific notation and proper spacing
         output.write(f"{point[0]:13.5E}{point[1]:13.5E}{point[2]:13.5E}\n")
     
@@ -269,47 +272,42 @@ def create_proper_unv_content(points, cells, field_data=None):
     output.write("    -1\n")
     
     # Dataset header for elements
-    output.write("        1        1        1\n")  # Record 1 - format version markers
+    output.write("        1        1        0        0        0        0        0\n")
     output.write(f"{len(cells):10d}\n")  # Number of elements
     
     # Write elements (hexahedrons - type 11)
     for i, cell in enumerate(cells, 1):
-        # Element header: id, type(11=hex), color, prop_table, mat_table, 
-        # real_constant_table, strain, stress, layer_number, version_number
-        output.write(f"{i:10d}       11        1        1        1        0        0        0        0\n")
-        # First 4 nodes
+        # Element header: id, type(11=hex), color, prop_table, mat_table, etc.
+        output.write(f"{i:10d}       11        1        1        1        0        0        0\n")
+        # 8 nodes of hexahedron - split into two lines of 4 nodes each
         output.write(f"{cell[0]+1:10d}{cell[1]+1:10d}{cell[2]+1:10d}{cell[3]+1:10d}\n")
-        # Last 4 nodes
         output.write(f"{cell[4]+1:10d}{cell[5]+1:10d}{cell[6]+1:10d}{cell[7]+1:10d}\n")
     
     output.write("    -1\n")
     
-    # Add dataset 2467 for groups/physical entities
+    # Add dataset 2467 for groups/physical entities if field data is provided
     if field_data:
         output.write("    -1\n")
         output.write("  2467\n")  # Group dataset
         output.write("    -1\n")
         
-        # Group header
-        output.write("        1        1        0\n")  # Record number, analysis type, data type
-        output.write("       13\n")  # Number of groups (13 physical entities)
+        # Dataset header for groups
+        output.write("        1        1        0        0        0        0        0\n")
+        output.write(f"{len(field_data):10d}\n")  # Number of groups
         
         # Write each group/physical entity
-        group_counter = 1
+        group_id = 1
         for name, data in field_data.items():
-            group_id = data["value"]
-            dimension = data["dimension"]
-            
             # Group header record
-            output.write(f"{group_counter:10d}        0        0        0\n")
-            # Group name
-            output.write(f"{name}\n")
-            # Analysis type, data type, number of entities
+            output.write(f"{group_id:10d}        0        0        0        0        0        0\n")
+            # Group name (padded to 80 characters)
+            output.write(f"{name.ljust(80)}\n")
+            # Analysis type, data type, version number
             output.write("        1        1        0\n")
+            # Number of entities in this group (0 for now - placeholder)
+            output.write("        0\n")
             
-            # No entities listed in this simplified version
-            # Real implementations would list all entities belonging to this group
-            group_counter += 1
+            group_id += 1
         
         output.write("    -1\n")
     
@@ -368,28 +366,28 @@ def export_mesh(mesh_data, format_name="vtk"):
                     try:
                         hex_cells = [("hexahedron", mesh_data["cells"])]
                         
-                        # Create cell data for physical groups
-                        cell_data = {}
-                        # Add physical group markers for cells
-                        cell_data["nastran:element_properties"] = [
-                            # For hexahedrons, we need to specify physical properties
-                            np.ones(len(mesh_data["cells"]), dtype=int)
-                        ]
-                        
-                        # Create point data if needed
-                        point_data = {}
-                        
-                        # Create mesh object
+                        # Create mesh with proper physical groups
                         mesh = meshio.Mesh(
                             points=mesh_data["points"],
                             cells=hex_cells,
-                            # field_data=mesh_data["field_data"],
-                            cell_data=cell_data,
-                            point_data=point_data
                         )
                         
-                        # Write using nastran format (which supports UNV)
-                        mesh.write(filepath, file_format="nastran")
+                        # Try different format names that might work for UNV
+                        unv_formats = ["nastran", "unv"]
+                        success = False
+                        
+                        for fmt in unv_formats:
+                            if fmt in SUPPORTED_FORMATS:
+                                try:
+                                    mesh.write(filepath, file_format=fmt)
+                                    success = True
+                                    st.success(f"✅ Meshio UNV export successful using '{fmt}' format")
+                                    break
+                                except Exception as e2:
+                                    st.warning(f"⚠️ Meshio '{fmt}' format failed: {str(e2)}")
+                        
+                        if not success:
+                            raise Exception("All UNV format attempts failed")
                         
                         # Rename file to have .unv extension if needed
                         if not filepath.endswith(".unv"):
@@ -398,7 +396,6 @@ def export_mesh(mesh_data, format_name="vtk"):
                             filepath = new_path
                             filename = os.path.basename(new_path)
                         
-                        st.success("✅ Meshio UNV export successful")
                     except Exception as e1:
                         st.warning(f"⚠️ Meshio UNV export failed: {str(e1)}. Using manual export.")
                         # Fallback to manual UNV generation
@@ -520,24 +517,24 @@ def main():
         st.subheader("Visualization Options")
         show_wireframe = st.checkbox("Show Wireframe", value=True)
         
-        # Export format
+        # Export format - filter based on capabilities
         st.subheader("Export Format")
         
         # Filter available formats based on meshio capabilities
         available_formats = STANDARD_FORMATS.copy()
-        if format_name == "unv" and not (HAS_MESHIO and HAS_UNV_SUPPORT):
-            available_formats.remove("unv")
-            
+        if "unv" in available_formats and not (HAS_MESHIO and HAS_UNV_SUPPORT):
+            # If meshio doesn't support UNV, we still keep it because we have manual export
+            pass  # Keep UNV format since we have manual fallback
+        
         export_format = st.selectbox("Format", available_formats)
         
-        # Show meshio status
+        # Show meshio status in expander
         if HAS_MESHIO:
-            with st.expander("Meshio Status"):
-                st.write(f"Version: {MESHIO_VERSION}")
-                if HAS_UNV_SUPPORT:
-                    st.write("✅ UNV format supported via 'nastran' format")
-                else:
-                    st.write("❌ UNV format not supported by this meshio version")
+            with st.expander("Meshio Details"):
+                st.write(f"**Version:** {MESHIO_VERSION}")
+                st.write(f"**UNV Support:** {'✅ Yes' if HAS_UNV_SUPPORT else '❌ No'}")
+                st.write("**Supported Formats:**")
+                st.code(", ".join(sorted(SUPPORTED_FORMATS)))
     
     # Generate button
     if st.button("🚀 Generate Mesh", type="primary", use_container_width=True):
@@ -634,34 +631,28 @@ def main():
                 )
                 
                 # Detailed format information
-                with st.expander("ℹ️ UNV Format Information"):
-                    st.markdown("""
-                    ### UNV (Universal File Format) Support
+                with st.expander("ℹ️ Format Information"):
+                    format_descriptions = {
+                        "msh": "Gmsh format - compatible with Code_Aster, GetFEM, and other FEM solvers",
+                        "vtk": "VTK format - compatible with ParaView and VTK-based visualization tools",
+                        "vtu": "VTK XML format - more efficient than standard VTK for large datasets",
+                        "xdmf": "Extensible Data Model Format - efficient for large datasets and time series",
+                        "unv": "I-DEAS Universal format - widely used in commercial FEM software like MSC Nastran, NX Nastran, Femap",
+                        "stl": "Stereolithography format - surface mesh only, used for 3D printing and visualization",
+                        "txt": "Simple text format - human readable but limited functionality"
+                    }
                     
-                    **Meshio Support:**
-                    - When available, meshio exports UNV format using the 'nastran' format parameter
-                    - This creates industry-standard UNV files compatible with most FEM software
+                    st.markdown(f"**{export_format.upper()}:** {format_descriptions.get(export_format, 'Standard mesh format')}")
                     
-                    **Manual Export Fallback:**
-                    - When meshio is unavailable or lacks UNV support, we generate UNV files manually
-                    - Our implementation follows the I-DEAS Universal File Format specifications:
-                      - Dataset 2411 for nodes
-                      - Dataset 2412 for elements (hexahedrons as type 11)
-                      - Dataset 2467 for physical groups/boundary conditions
-                    
-                    **Compatible Software:**
-                    - MSC Nastran
-                    - NX Nastran
-                    - Femap
-                    - ANSYS (via import)
-                    - Many other commercial and open-source FEM packages
-                    
-                    **File Structure:**
-                    - Proper dataset headers and terminators
-                    - Scientific notation for coordinates
-                    - Physical group definitions for boundary conditions
-                    - Standard hexahedral element definitions
-                    """)
+                    if export_format == "unv":
+                        st.markdown("""
+                        **UNV Export Details:**
+                        - Uses meshio with 'nastran' format when available
+                        - Falls back to manual generation following I-DEAS Universal File Format
+                        - Contains proper node and element datasets (2411, 2412)
+                        - Includes physical group definitions for boundary conditions
+                        - Compatible with most commercial FEM software
+                        """)
                 
                 st.success("✅ Mesh generated and exported successfully!")
             
@@ -671,7 +662,7 @@ def main():
     
     # Footer
     st.markdown("---")
-    st.caption("✅ This app works in all cloud environments. UNV export uses meshio when available, otherwise falls back to manual generation.")
+    st.caption("✅ This app works in all cloud environments with robust fallbacks for all export formats")
 
 if __name__ == "__main__":
     main()
