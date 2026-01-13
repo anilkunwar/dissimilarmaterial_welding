@@ -1,3 +1,6 @@
 streamlit
 gmsh
 numpy
+meshio 
+pyvista 
+stpyvista 
