@@ -6,6 +6,10 @@ import os
 import plotly.graph_objects as go
 import io
 import time
+import hashlib
+import json
+from typing import Dict, Any, Optional, Tuple
+from dataclasses import dataclass
 from functools import lru_cache
 
 # Set page config at the very top
@@ -15,24 +19,80 @@ st.set_page_config(
     layout="wide"
 )
 
-# Initialize session state for caching
+# ============================================================================
+# DATA CLASSES FOR HASHABLE DATA STRUCTURES
+# ============================================================================
+
+@dataclass(frozen=True)  # Frozen makes it immutable and hashable
+class MeshParameters:
+    """Hashable container for mesh generation parameters"""
+    lx: float
+    ly: float
+    lz: float
+    backend: str
+    resolution: Optional[float] = None
+    max_volume: Optional[float] = None
+    mesh_size: Optional[float] = None
+    
+    def to_dict(self) -> Dict:
+        """Convert to dictionary for JSON serialization"""
+        return {
+            'lx': self.lx,
+            'ly': self.ly,
+            'lz': self.lz,
+            'backend': self.backend,
+            'resolution': self.resolution,
+            'max_volume': self.max_volume,
+            'mesh_size': self.mesh_size
+        }
+    
+    def to_hash(self) -> str:
+        """Create a hash string for caching"""
+        return hashlib.md5(json.dumps(self.to_dict(), sort_keys=True).encode()).hexdigest()
+
+@dataclass(frozen=True)
+class VisualizationParameters:
+    """Hashable container for visualization parameters"""
+    show_points: bool
+    show_wireframe: bool
+    
+    def to_dict(self) -> Dict:
+        """Convert to dictionary for JSON serialization"""
+        return {
+            'show_points': self.show_points,
+            'show_wireframe': self.show_wireframe
+        }
+    
+    def to_hash(self) -> str:
+        """Create a hash string for caching"""
+        return hashlib.md5(json.dumps(self.to_dict(), sort_keys=True).encode()).hexdigest()
+
+# ============================================================================
+# INITIALIZE SESSION STATE WITH HASHABLE STRUCTURES
+# ============================================================================
+
 if 'initialized' not in st.session_state:
     st.session_state.initialized = False
-    st.session_state.mesh_cache = {}
-    st.session_state.fig_cache = {}
     st.session_state.import_status = {}
-    st.session_state.current_mesh = None
+    st.session_state.current_mesh_params = None
+    st.session_state.current_viz_params = None
+    st.session_state.current_mesh_data = None
     st.session_state.current_stats = None
-    st.session_state.current_mesh_obj = None
+    st.session_state.mesh_cache = {}
+    st.session_state.viz_cache = {}
+    st.session_state.export_cache = {}
     st.session_state.last_generation_time = None
+    st.session_state.mesh_generation_count = 0
 
-# Cache heavy imports
+# ============================================================================
+# CACHE FOR HEAVY IMPORTS
+# ============================================================================
+
 @st.cache_resource(ttl=3600, show_spinner=False)
 def lazy_import_meshpy():
     """Lazy load MeshPy with caching"""
     try:
         from meshpy.tet import MeshInfo, build
-        from meshpy.geometry import GeometryBuilder, generate_surface_of_revolution
         return True, {"MeshInfo": MeshInfo, "build": build}
     except Exception as e:
         return False, str(e)
@@ -84,7 +144,10 @@ if not st.session_state.initialized:
         }
         st.session_state.initialized = True
 
-# Constants - load once
+# ============================================================================
+# CONSTANTS - HASHABLE DATA
+# ============================================================================
+
 PHYSICAL_GROUPS = {
     "Solid_1front": {"dim": 3, "id": 1},
     "Solid_2back": {"dim": 3, "id": 2},
@@ -101,7 +164,6 @@ PHYSICAL_GROUPS = {
     "Face_11rightback": {"dim": 2, "id": 11}
 }
 
-# Define all supported export formats with descriptions
 EXPORT_FORMATS = {
     "Gmsh MSH (.msh)": {
         "extension": "msh",
@@ -186,38 +248,23 @@ EXPORT_FORMATS = {
         "mime": "text/plain",
         "description": "Human-readable text format",
         "backend": "custom"
-    },
-    "OFF (.off)": {
-        "extension": "off",
-        "mime": "application/octet-stream",
-        "description": "Object File Format",
-        "backend": "meshio"
-    },
-    "SU2 (.su2)": {
-        "extension": "su2",
-        "mime": "application/octet-stream",
-        "description": "SU2 CFD solver format",
-        "backend": "meshio"
-    },
-    "Exodus (.exo)": {
-        "extension": "exo",
-        "mime": "application/octet-stream",
-        "description": "Exodus II format",
-        "backend": "meshio"
     }
 }
 
 st.title("ParallelGroup Advanced Mesh Generator")
 st.markdown("""
 This app generates structured and unstructured meshes using multiple backends.
-**Optimized for Streamlit Cloud with caching and lazy loading.**
+**Optimized for Streamlit Cloud with intelligent caching.**
 - **Slab 1 (Solid_1front)**: `(0,0,0)` → `(lx, ly, lz)`
 - **Slab 2 (Solid_2back)**:  `(0,ly,0)` → `(lx, 2·ly, lz)`
 """)
 
-# Cache mesh generation functions
-@st.cache_data(ttl=300, show_spinner=False)
-def create_mesh_with_meshpy_cached(lx, ly, lz, max_volume=1.0):
+# ============================================================================
+# MESH GENERATION FUNCTIONS WITH HASHABLE PARAMETERS
+# ============================================================================
+
+@st.cache_data(ttl=300, show_spinner=False, max_entries=10)
+def create_mesh_with_meshpy_cached(_params: MeshParameters) -> Optional[Dict]:
     """Create mesh using MeshPy with caching"""
     if not st.session_state.import_status["HAS_MESHPY"]:
         return None
@@ -230,10 +277,10 @@ def create_mesh_with_meshpy_cached(lx, ly, lz, max_volume=1.0):
         
         # Define vertices
         vertices = [
-            (0, 0, 0), (lx, 0, 0), (lx, ly, 0), (0, ly, 0),
-            (0, 0, lz), (lx, 0, lz), (lx, ly, lz), (0, ly, lz),
-            (0, ly, 0), (lx, ly, 0), (lx, 2*ly, 0), (0, 2*ly, 0),
-            (0, ly, lz), (lx, ly, lz), (lx, 2*ly, lz), (0, 2*ly, lz)
+            (0, 0, 0), (_params.lx, 0, 0), (_params.lx, _params.ly, 0), (0, _params.ly, 0),
+            (0, 0, _params.lz), (_params.lx, 0, _params.lz), (_params.lx, _params.ly, _params.lz), (0, _params.ly, _params.lz),
+            (0, _params.ly, 0), (_params.lx, _params.ly, 0), (_params.lx, 2*_params.ly, 0), (0, 2*_params.ly, 0),
+            (0, _params.ly, _params.lz), (_params.lx, _params.ly, _params.lz), (_params.lx, 2*_params.ly, _params.lz), (0, 2*_params.ly, _params.lz)
         ]
         
         facets = [
@@ -248,6 +295,8 @@ def create_mesh_with_meshpy_cached(lx, ly, lz, max_volume=1.0):
         mesh_info.set_points(vertices)
         mesh_info.set_facets(facets, facet_markers)
         
+        max_volume = _params.max_volume if _params.max_volume is not None else 5.0
+        
         mesh = build_func(
             mesh_info,
             max_volume=max_volume,
@@ -260,28 +309,11 @@ def create_mesh_with_meshpy_cached(lx, ly, lz, max_volume=1.0):
             "points": np.array(mesh.points),
             "cells": {"tetra": np.array(mesh.elements)},
             "physical_groups": PHYSICAL_GROUPS,
-            "facet_markers": mesh.facet_markers,
-            "dimensions": (lx, ly, lz),
-            "backend": "meshpy"
+            "facet_markers": mesh.facet_markers.tolist() if hasattr(mesh.facet_markers, 'tolist') else mesh.facet_markers,
+            "dimensions": (_params.lx, _params.ly, _params.lz),
+            "backend": "meshpy",
+            "params_hash": _params.to_hash()
         }
-        
-        # Create meshio object for better export
-        if st.session_state.import_status["HAS_MESHIO"]:
-            meshio_module = st.session_state.import_status["meshio_data"]["meshio"]
-            
-            # Create cell blocks for meshio
-            cells = [("tetra", mesh_data["cells"]["tetra"])]
-            
-            # Create meshio mesh object
-            mesh_obj = meshio_module.Mesh(
-                mesh_data["points"],
-                cells,
-                cell_sets={
-                    "Solid_1front": [np.arange(0, len(mesh_data["cells"]["tetra"])//2)],
-                    "Solid_2back": [np.arange(len(mesh_data["cells"]["tetra"])//2, len(mesh_data["cells"]["tetra"]))]
-                }
-            )
-            mesh_data["meshio_object"] = mesh_obj
         
         return mesh_data
         
@@ -289,8 +321,8 @@ def create_mesh_with_meshpy_cached(lx, ly, lz, max_volume=1.0):
         st.error(f"MeshPy generation failed: {str(e)[:100]}")
         return None
 
-@st.cache_data(ttl=300, show_spinner=False)
-def create_gmsh_mesh_cached(lx, ly, lz, mesh_size=1.0):
+@st.cache_data(ttl=300, show_spinner=False, max_entries=10)
+def create_gmsh_mesh_cached(_params: MeshParameters) -> Optional[Dict]:
     """Create mesh using Gmsh with proper physical groups"""
     if not st.session_state.import_status["HAS_GMSH"]:
         return None
@@ -303,31 +335,15 @@ def create_gmsh_mesh_cached(lx, ly, lz, mesh_size=1.0):
         gmsh_module.model.add("TwoSlabs")
         
         # Set mesh size
-        lc = min(lx, ly, lz) / 10.0 * mesh_size
+        lc = min(_params.lx, _params.ly, _params.lz) / 10.0
+        if _params.mesh_size is not None:
+            lc *= _params.mesh_size
         
         # Create first slab
-        p1 = gmsh_module.model.occ.addPoint(0, 0, 0, lc)
-        p2 = gmsh_module.model.occ.addPoint(lx, 0, 0, lc)
-        p3 = gmsh_module.model.occ.addPoint(lx, ly, 0, lc)
-        p4 = gmsh_module.model.occ.addPoint(0, ly, 0, lc)
-        p5 = gmsh_module.model.occ.addPoint(0, 0, lz, lc)
-        p6 = gmsh_module.model.occ.addPoint(lx, 0, lz, lc)
-        p7 = gmsh_module.model.occ.addPoint(lx, ly, lz, lc)
-        p8 = gmsh_module.model.occ.addPoint(0, ly, lz, lc)
+        box1 = gmsh_module.model.occ.addBox(0, 0, 0, _params.lx, _params.ly, _params.lz)
         
         # Create second slab
-        p9 = gmsh_module.model.occ.addPoint(0, ly, 0, lc)
-        p10 = gmsh_module.model.occ.addPoint(lx, ly, 0, lc)
-        p11 = gmsh_module.model.occ.addPoint(lx, 2*ly, 0, lc)
-        p12 = gmsh_module.model.occ.addPoint(0, 2*ly, 0, lc)
-        p13 = gmsh_module.model.occ.addPoint(0, ly, lz, lc)
-        p14 = gmsh_module.model.occ.addPoint(lx, ly, lz, lc)
-        p15 = gmsh_module.model.occ.addPoint(lx, 2*ly, lz, lc)
-        p16 = gmsh_module.model.occ.addPoint(0, 2*ly, lz, lc)
-        
-        # Create volumes
-        box1 = gmsh_module.model.occ.addBox(0, 0, 0, lx, ly, lz)
-        box2 = gmsh_module.model.occ.addBox(0, ly, 0, lx, ly, lz)
+        box2 = gmsh_module.model.occ.addBox(0, _params.ly, 0, _params.lx, _params.ly, _params.lz)
         
         # Synchronize
         gmsh_module.model.occ.synchronize()
@@ -338,20 +354,6 @@ def create_gmsh_mesh_cached(lx, ly, lz, mesh_size=1.0):
         
         gmsh_module.model.addPhysicalGroup(3, [box2], 2)
         gmsh_module.model.setPhysicalName(3, 2, "Solid_2back")
-        
-        # Add surface physical groups
-        surfaces = gmsh_module.model.getEntities(2)
-        face_counter = 1
-        for surf in surfaces:
-            if surf[1] == 1:  # Left face of slab 1
-                gmsh_module.model.addPhysicalGroup(2, [surf[0]], 10 + face_counter)
-                gmsh_module.model.setPhysicalName(2, 10 + face_counter, f"Face_{face_counter}leftfront")
-                face_counter += 1
-            elif surf[1] == 6:  # Right face of slab 1
-                gmsh_module.model.addPhysicalGroup(2, [surf[0]], 10 + face_counter)
-                gmsh_module.model.setPhysicalName(2, 10 + face_counter, f"Face_{face_counter}rightfront")
-                face_counter += 1
-            # Add more face mappings as needed...
         
         # Generate mesh
         gmsh_module.option.setNumber("Mesh.Algorithm3D", 1)
@@ -373,21 +375,15 @@ def create_gmsh_mesh_cached(lx, ly, lz, mesh_size=1.0):
             tets = tet_nodes.reshape(-1, 4) - 1  # Convert to 0-based indexing
             
             mesh_data = {
-                "points": node_coords,
-                "cells": {"tetra": tets},
+                "points": node_coords.tolist(),
+                "cells": {"tetra": tets.tolist()},
                 "physical_groups": PHYSICAL_GROUPS,
-                "dimensions": (lx, ly, lz),
-                "backend": "gmsh"
+                "dimensions": (_params.lx, _params.ly, _params.lz),
+                "backend": "gmsh",
+                "params_hash": _params.to_hash()
             }
             
-            # Create meshio object
-            if st.session_state.import_status["HAS_MESHIO"]:
-                meshio_module = st.session_state.import_status["meshio_data"]["meshio"]
-                cells = [("tetra", tets)]
-                mesh_obj = meshio_module.Mesh(node_coords, cells)
-                mesh_data["meshio_object"] = mesh_obj
-                mesh_data["gmsh_model"] = gmsh_module  # Keep reference for UNV export
-            
+            gmsh_module.finalize()
             return mesh_data
         
         gmsh_module.finalize()
@@ -401,18 +397,19 @@ def create_gmsh_mesh_cached(lx, ly, lz, mesh_size=1.0):
             pass
         return None
 
-@st.cache_data(ttl=300, show_spinner=False)
-def create_fallback_mesh_cached(lx, ly, lz, resolution=10):
+@st.cache_data(ttl=300, show_spinner=False, max_entries=10)
+def create_fallback_mesh_cached(_params: MeshParameters) -> Dict:
     """Create fallback mesh with caching"""
     # Optimized mesh generation - limit complexity
-    div_x = min(20, max(2, int(resolution * lx / max(lx, ly, lz))))
-    div_y = min(20, max(2, int(resolution * ly / max(lx, ly, lz))))
-    div_z = min(10, max(2, int(resolution * lz / max(lx, ly, lz))))
+    resolution = _params.resolution if _params.resolution is not None else 6
+    div_x = min(20, max(2, int(resolution * _params.lx / max(_params.lx, _params.ly, _params.lz))))
+    div_y = min(20, max(2, int(resolution * _params.ly / max(_params.lx, _params.ly, _params.lz))))
+    div_z = min(10, max(2, int(resolution * _params.lz / max(_params.lx, _params.ly, _params.lz))))
     
     # Generate points more efficiently
-    x = np.linspace(0, lx, div_x + 1)
-    y = np.linspace(0, 2*ly, 2*div_y + 1)
-    z = np.linspace(0, lz, div_z + 1)
+    x = np.linspace(0, _params.lx, div_x + 1)
+    y = np.linspace(0, 2*_params.ly, 2*div_y + 1)
+    z = np.linspace(0, _params.lz, div_z + 1)
     
     # Create mesh grid
     xx, yy, zz = np.meshgrid(x, y, z, indexing='ij')
@@ -438,52 +435,49 @@ def create_fallback_mesh_cached(lx, ly, lz, resolution=10):
     cells_array = np.array(cells)
     
     mesh_data = {
-        "points": points,
-        "cells": {"hexahedron": cells_array},
+        "points": points.tolist(),
+        "cells": {"hexahedron": cells_array.tolist()},
         "physical_groups": PHYSICAL_GROUPS,
-        "dimensions": (lx, ly, lz),
+        "dimensions": (_params.lx, _params.ly, _params.lz),
         "divisions": (div_x, div_y, div_z),
-        "backend": "fallback"
+        "backend": "fallback",
+        "params_hash": _params.to_hash()
     }
-    
-    # Create meshio object for better export
-    if st.session_state.import_status["HAS_MESHIO"]:
-        meshio_module = st.session_state.import_status["meshio_data"]["meshio"]
-        
-        # Split cells into two groups for the two slabs
-        slab1_cells = []
-        slab2_cells = []
-        
-        for idx, cell in enumerate(cells_array):
-            # Get cell center y-coordinate
-            cell_points = points[cell]
-            center_y = np.mean(cell_points[:, 1])
-            
-            if center_y < ly:  # First slab
-                slab1_cells.append(idx)
-            else:  # Second slab
-                slab2_cells.append(idx)
-        
-        # Create meshio mesh object with cell sets
-        cells_list = [("hexahedron", cells_array)]
-        cell_sets = {
-            "Solid_1front": [np.array(slab1_cells)],
-            "Solid_2back": [np.array(slab2_cells)]
-        }
-        
-        mesh_obj = meshio_module.Mesh(points, cells_list, cell_sets=cell_sets)
-        mesh_data["meshio_object"] = mesh_obj
     
     return mesh_data
 
-def write_unv_format(mesh_data, filepath):
-    """Write mesh in I-DEAS UNV format"""
-    # UNV format specification:
-    # - Section 2411: Nodes
-    # - Section 2412: Elements
-    # - Section 2467: Groups
+# ============================================================================
+# HELPER FUNCTIONS FOR MESH CONVERSION
+# ============================================================================
+
+def convert_mesh_data_for_use(mesh_data: Dict) -> Dict:
+    """Convert lists back to numpy arrays for use in visualization and export"""
+    if mesh_data is None:
+        return None
     
+    converted = mesh_data.copy()
+    
+    # Convert points back to numpy array
+    if isinstance(converted["points"], list):
+        converted["points"] = np.array(converted["points"])
+    
+    # Convert cells back to numpy arrays
+    if "cells" in converted:
+        for cell_type, cells in converted["cells"].items():
+            if isinstance(cells, list):
+                converted["cells"][cell_type] = np.array(cells)
+    
+    return converted
+
+# ============================================================================
+# UNV AND MSH FORMAT WRITERS
+# ============================================================================
+
+def write_unv_format(mesh_data: Dict, filepath: str) -> None:
+    """Write mesh in I-DEAS UNV format"""
     points = mesh_data["points"]
+    if not isinstance(points, np.ndarray):
+        points = np.array(points)
     
     with open(filepath, 'w') as f:
         # Write nodes (section 2411)
@@ -503,6 +497,8 @@ def write_unv_format(mesh_data, filepath):
         # Write tetrahedral elements if available
         if "tetra" in mesh_data["cells"] and len(mesh_data["cells"]["tetra"]) > 0:
             tets = mesh_data["cells"]["tetra"]
+            if not isinstance(tets, np.ndarray):
+                tets = np.array(tets)
             for tet in tets[:1000]:  # Limit for performance
                 f.write(f"{element_counter:10d}{11:10d}{2:10d}{1:10d}{1:10d}{0:10d}{0:10d}\n")
                 f.write(f"{tet[0]+1:10d}{tet[1]+1:10d}{tet[2]+1:10d}{tet[3]+1:10d}{0:10d}{0:10d}{0:10d}{0:10d}\n")
@@ -511,6 +507,8 @@ def write_unv_format(mesh_data, filepath):
         # Write hexahedral elements if available
         elif "hexahedron" in mesh_data["cells"] and len(mesh_data["cells"]["hexahedron"]) > 0:
             hexes = mesh_data["cells"]["hexahedron"]
+            if not isinstance(hexes, np.ndarray):
+                hexes = np.array(hexes)
             for hexa in hexes[:500]:  # Limit for performance
                 f.write(f"{element_counter:10d}{6:10d}{2:10d}{1:10d}{1:10d}{0:10d}{0:10d}\n")
                 f.write(f"{hexa[0]+1:10d}{hexa[1]+1:10d}{hexa[2]+1:10d}{hexa[3]+1:10d}")
@@ -535,9 +533,11 @@ def write_unv_format(mesh_data, filepath):
         # End of file
         f.write("    -1\n")
 
-def write_msh_format(mesh_data, filepath):
+def write_msh_format(mesh_data: Dict, filepath: str) -> None:
     """Write mesh in Gmsh MSH format version 2.2"""
     points = mesh_data["points"]
+    if not isinstance(points, np.ndarray):
+        points = np.array(points)
     
     with open(filepath, 'w') as f:
         # Write header
@@ -559,6 +559,8 @@ def write_msh_format(mesh_data, filepath):
         # Collect tetrahedral elements
         if "tetra" in mesh_data["cells"] and len(mesh_data["cells"]["tetra"]) > 0:
             tets = mesh_data["cells"]["tetra"]
+            if not isinstance(tets, np.ndarray):
+                tets = np.array(tets)
             for tet in tets[:1000]:  # Limit for performance
                 elements_list.append((element_counter, 4, 2, 1, 1, 
                                      tet[0]+1, tet[1]+1, tet[2]+1, tet[3]+1))
@@ -567,6 +569,8 @@ def write_msh_format(mesh_data, filepath):
         # Collect hexahedral elements
         elif "hexahedron" in mesh_data["cells"] and len(mesh_data["cells"]["hexahedron"]) > 0:
             hexes = mesh_data["cells"]["hexahedron"]
+            if not isinstance(hexes, np.ndarray):
+                hexes = np.array(hexes)
             for hexa in hexes[:500]:  # Limit for performance
                 elements_list.append((element_counter, 5, 2, 1, 1,
                                      hexa[0]+1, hexa[1]+1, hexa[2]+1, hexa[3]+1,
@@ -591,17 +595,26 @@ def write_msh_format(mesh_data, filepath):
         
         f.write("$EndPhysicalNames\n")
 
-# Optimized visualization with caching
-@st.cache_data(ttl=300, show_spinner=False, max_entries=5)
-def visualize_mesh_with_plotly_cached(mesh_data, show_points=True, show_wireframe=True):
-    """Create optimized 3D visualization"""
+# ============================================================================
+# VISUALIZATION FUNCTION WITH HASHABLE PARAMETERS
+# ============================================================================
+
+@st.cache_data(ttl=300, show_spinner=False, max_entries=10)
+def create_visualization_figure(_mesh_params: MeshParameters, _viz_params: VisualizationParameters) -> go.Figure:
+    """Create optimized 3D visualization with hashable parameters"""
+    # Get mesh data from cache or generate
+    mesh_data = get_or_generate_mesh(_mesh_params)
+    if mesh_data is None:
+        return go.Figure()
+    
+    mesh_data = convert_mesh_data_for_use(mesh_data)
     points = mesh_data["points"]
     lx, ly, lz = mesh_data["dimensions"]
     
     fig = go.Figure()
     
     # Add mesh points if requested
-    if show_points:
+    if _viz_params.show_points:
         # Sample points for performance
         max_points = min(500, len(points))
         if len(points) > max_points:
@@ -621,7 +634,7 @@ def visualize_mesh_with_plotly_cached(mesh_data, show_points=True, show_wirefram
         ))
     
     # Add slab wireframes
-    if show_wireframe:
+    if _viz_params.show_wireframe:
         # Slab 1 wireframe
         slab1_vertices = np.array([
             [0, 0, 0], [lx, 0, 0], [lx, ly, 0], [0, ly, 0],
@@ -730,29 +743,65 @@ def visualize_mesh_with_plotly_cached(mesh_data, show_points=True, show_wirefram
     
     return fig
 
-# Optimized export function
-@st.cache_data(ttl=300, show_spinner=False)
-def export_mesh_cached(mesh_data, format_info):
-    """Export mesh with caching"""
-    format_name = format_info["name"]
-    extension = format_info["extension"]
-    backend = format_info.get("backend", "meshio")
+# ============================================================================
+# MESH GENERATION DISPATCHER
+# ============================================================================
+
+def get_or_generate_mesh(params: MeshParameters) -> Optional[Dict]:
+    """Get mesh from cache or generate new mesh"""
+    cache_key = params.to_hash()
+    
+    # Check if in session state cache
+    if cache_key in st.session_state.mesh_cache:
+        return st.session_state.mesh_cache[cache_key]
+    
+    # Generate mesh based on backend
+    mesh_data = None
+    
+    if params.backend == "Gmsh" and st.session_state.import_status["HAS_GMSH"]:
+        mesh_data = create_gmsh_mesh_cached(params)
+    elif params.backend == "MeshPy" and st.session_state.import_status["HAS_MESHPY"]:
+        mesh_data = create_mesh_with_meshpy_cached(params)
+    else:
+        mesh_data = create_fallback_mesh_cached(params)
+    
+    # Store in cache
+    if mesh_data is not None:
+        st.session_state.mesh_cache[cache_key] = mesh_data
+    
+    return mesh_data
+
+# ============================================================================
+# EXPORT FUNCTION WITH HASHABLE PARAMETERS
+# ============================================================================
+
+@st.cache_data(ttl=300, show_spinner=False, max_entries=10)
+def export_mesh_data(_mesh_params: MeshParameters, format_key: str) -> Tuple[bytes, str]:
+    """Export mesh data with caching"""
+    format_info = EXPORT_FORMATS.get(format_key, EXPORT_FORMATS["Simple Text (.txt)"])
+    
+    # Get mesh data
+    mesh_data = get_or_generate_mesh(_mesh_params)
+    if mesh_data is None:
+        return b"", "error.txt"
+    
+    mesh_data = convert_mesh_data_for_use(mesh_data)
     
     with tempfile.TemporaryDirectory() as tmpdir:
-        filename = f"two_slabs.{extension}"
+        filename = f"two_slabs.{format_info['extension']}"
         filepath = os.path.join(tmpdir, filename)
         
         try:
             # Handle UNV format with custom writer
-            if extension == "unv":
+            if format_info['extension'] == "unv":
                 write_unv_format(mesh_data, filepath)
             
             # Handle MSH format with custom writer
-            elif extension == "msh":
+            elif format_info['extension'] == "msh":
                 write_msh_format(mesh_data, filepath)
             
             # Handle text format
-            elif extension == "txt":
+            elif format_info['extension'] == "txt":
                 with open(filepath, 'w') as f:
                     f.write(f"# Mesh Data - ParallelGroup Mesh Generator\n")
                     f.write(f"# Dimensions: {mesh_data['dimensions']}\n")
@@ -769,28 +818,36 @@ def export_mesh_cached(mesh_data, format_info):
                         f.write(f"# {name}: dim={info['dim']}, id={info['id']}\n")
                     
                     f.write("\n# Points (first 1000):\n")
-                    for i, point in enumerate(mesh_data['points'][:1000], 1):
+                    points_array = mesh_data['points']
+                    if isinstance(points_array, list):
+                        points_array = np.array(points_array)
+                    for i, point in enumerate(points_array[:1000], 1):
                         f.write(f"{i} {point[0]:.6f} {point[1]:.6f} {point[2]:.6f}\n")
             
             # Handle other formats with meshio if available
-            elif st.session_state.import_status["HAS_MESHIO"] and backend == "meshio":
+            elif st.session_state.import_status["HAS_MESHIO"] and format_info['backend'] == "meshio":
                 meshio_module = st.session_state.import_status["meshio_data"]["meshio"]
                 
                 # Prepare cells for meshio
+                cells = []
                 if 'tetra' in mesh_data.get('cells', {}) and len(mesh_data['cells']['tetra']) > 0:
-                    cells = [("tetra", mesh_data['cells']['tetra'][:2000])]
+                    tets = mesh_data['cells']['tetra']
+                    if isinstance(tets, list):
+                        tets = np.array(tets)
+                    cells = [("tetra", tets[:2000])]
                 elif 'hexahedron' in mesh_data.get('cells', {}) and len(mesh_data['cells']['hexahedron']) > 0:
-                    cells = [("hexahedron", mesh_data['cells']['hexahedron'][:1000])]
-                else:
-                    # Create simple tetrahedral mesh
-                    if len(mesh_data['points']) >= 4:
-                        cells = [("tetra", np.array([[0, 1, 2, 3]]))]
-                    else:
-                        cells = []
+                    hexes = mesh_data['cells']['hexahedron']
+                    if isinstance(hexes, list):
+                        hexes = np.array(hexes)
+                    cells = [("hexahedron", hexes[:1000])]
                 
                 # Create meshio mesh
+                points_array = mesh_data['points']
+                if isinstance(points_array, list):
+                    points_array = np.array(points_array)
+                
                 mesh = meshio_module.Mesh(
-                    mesh_data['points'][:1000],  # Limit points
+                    points_array[:1000],  # Limit points
                     cells,
                     point_data={}
                 )
@@ -807,35 +864,27 @@ def export_mesh_cached(mesh_data, format_info):
                     "cdb": "ansys",
                     "ply": "ply",
                     "obj": "obj",
-                    "dat": "tecplot",
-                    "off": "off",
-                    "su2": "su2",
-                    "exo": "exodus"
+                    "dat": "tecplot"
                 }
                 
-                file_format = format_map.get(extension, "vtk")
+                file_format = format_map.get(format_info['extension'], "vtk")
                 mesh.write(filepath, file_format=file_format)
             
             else:
                 # Fallback to text format
-                return export_mesh_cached(mesh_data, {
-                    "name": "Simple Text (.txt)",
-                    "extension": "txt",
-                    "backend": "custom"
-                })
+                return export_mesh_data(_mesh_params, "Simple Text (.txt)")
             
             # Read file for download
             with open(filepath, 'rb') as f:
                 return f.read(), filename
             
         except Exception as e:
-            st.warning(f"Export to {format_name} failed: {str(e)[:100]}")
             # Fallback to text format
-            return export_mesh_cached(mesh_data, {
-                "name": "Simple Text (.txt)",
-                "extension": "txt",
-                "backend": "custom"
-            })
+            return export_mesh_data(_mesh_params, "Simple Text (.txt)")
+
+# ============================================================================
+# MAIN APPLICATION FUNCTION
+# ============================================================================
 
 def main():
     # Display backend status in sidebar
@@ -894,33 +943,28 @@ def main():
             index=0
         )
         
+        # Backend-specific parameters
+        resolution = None
+        max_volume = None
+        mesh_size = None
+        
         if "Hex" in mesh_backend:
             resolution = st.slider("Resolution", 3, 15, 6, 
                                  help="Higher = finer mesh, but slower")
-            max_volume = None
-            mesh_size = None
         elif "Gmsh" in mesh_backend:
             if st.session_state.import_status["HAS_GMSH"]:
                 mesh_size = st.slider("Mesh Size Factor", 0.1, 5.0, 1.0, 0.1)
-                max_volume = None
-                resolution = None
             else:
                 st.warning("Gmsh not available, using hex mesh")
                 mesh_backend = "Fast Hex Mesh"
                 resolution = 6
-                max_volume = None
-                mesh_size = None
         else:  # MeshPy
             if st.session_state.import_status["HAS_MESHPY"]:
                 max_volume = st.slider("Max Element Volume", 0.5, 50.0, 5.0, 0.5)
-                mesh_size = None
-                resolution = None
             else:
                 st.warning("MeshPy not available, using hex mesh")
                 mesh_backend = "Fast Hex Mesh"
                 resolution = 6
-                max_volume = None
-                mesh_size = None
         
         st.markdown("---")
         st.subheader("🎨 Visualization")
@@ -930,7 +974,7 @@ def main():
         st.markdown("---")
         st.subheader("📤 Export Settings")
         
-        # Export format selection with descriptions
+        # Export format selection
         selected_format = st.selectbox(
             "Export Format",
             list(EXPORT_FORMATS.keys()),
@@ -945,79 +989,83 @@ def main():
         st.markdown("---")
         st.subheader("🔄 Cache Control")
         
-        # Clear cache button
-        if st.button("Clear All Cache", type="secondary", use_container_width=True):
-            st.cache_data.clear()
-            st.cache_resource.clear()
-            st.session_state.mesh_cache = {}
-            st.session_state.fig_cache = {}
-            st.session_state.current_mesh = None
-            st.session_state.current_stats = None
-            st.session_state.current_mesh_obj = None
-            st.rerun()
+        col_cache1, col_cache2 = st.columns(2)
+        with col_cache1:
+            if st.button("Clear Cache", type="secondary", use_container_width=True):
+                st.cache_data.clear()
+                st.success("Cache cleared!")
+                
+        with col_cache2:
+            cache_size = len(st.session_state.mesh_cache)
+            st.metric("Cache Size", cache_size)
         
-        # Show cache info
-        cache_size = len(st.session_state.mesh_cache)
-        st.caption(f"Cache size: {cache_size} meshes")
+        st.caption(f"Mesh generations: {st.session_state.mesh_generation_count}")
     
     # Main content area
     st.subheader("Mesh Generation Control")
     
     # Generate button
-    generate_col1, generate_col2 = st.columns([3, 1])
-    with generate_col1:
-        if st.button("🚀 Generate Mesh", type="primary", use_container_width=True):
-            start_time = time.time()
+    if st.button("🚀 Generate Mesh", type="primary", use_container_width=True):
+        start_time = time.time()
+        
+        # Create hashable parameters
+        mesh_params = MeshParameters(
+            lx=lx,
+            ly=ly,
+            lz=lz,
+            backend=mesh_backend,
+            resolution=resolution,
+            max_volume=max_volume,
+            mesh_size=mesh_size
+        )
+        
+        viz_params = VisualizationParameters(
+            show_points=show_points,
+            show_wireframe=show_wireframe
+        )
+        
+        with st.spinner(f"Generating mesh with {mesh_backend}..."):
+            # Generate or retrieve mesh
+            mesh_data = get_or_generate_mesh(mesh_params)
             
-            with st.spinner(f"Generating mesh with {mesh_backend}..."):
-                # Generate mesh based on selected backend
-                if "Gmsh" in mesh_backend and st.session_state.import_status["HAS_GMSH"]:
-                    mesh_data = create_gmsh_mesh_cached(lx, ly, lz, mesh_size)
-                    backend_used = "Gmsh"
-                elif "MeshPy" in mesh_backend and st.session_state.import_status["HAS_MESHPY"]:
-                    mesh_data = create_mesh_with_meshpy_cached(lx, ly, lz, max_volume)
-                    backend_used = "MeshPy"
-                else:
-                    mesh_data = create_fallback_mesh_cached(lx, ly, lz, resolution)
-                    backend_used = "Hex Mesh"
-                
-                if mesh_data is None:
-                    st.error("Failed to generate mesh. Using fallback method.")
-                    mesh_data = create_fallback_mesh_cached(lx, ly, lz, 5)
-                    backend_used = "Fallback"
-                
+            if mesh_data is None:
+                st.error("Failed to generate mesh. Please try a different configuration.")
+            else:
                 # Store in session state
-                st.session_state.current_mesh = mesh_data
+                st.session_state.current_mesh_params = mesh_params
+                st.session_state.current_viz_params = viz_params
+                st.session_state.current_mesh_data = mesh_data
                 st.session_state.last_generation_time = time.time() - start_time
+                st.session_state.mesh_generation_count += 1
+                
+                # Convert for statistics
+                mesh_data_use = convert_mesh_data_for_use(mesh_data)
                 
                 # Calculate statistics
-                num_points = len(mesh_data["points"])
-                if 'tetra' in mesh_data.get('cells', {}):
-                    num_cells = len(mesh_data['cells']['tetra'])
+                num_points = len(mesh_data_use["points"])
+                if 'tetra' in mesh_data_use.get('cells', {}):
+                    num_cells = len(mesh_data_use['cells']['tetra'])
                     cell_type = "Tetrahedra"
-                elif 'hexahedron' in mesh_data.get('cells', {}):
-                    num_cells = len(mesh_data['cells']['hexahedron'])
+                elif 'hexahedron' in mesh_data_use.get('cells', {}):
+                    num_cells = len(mesh_data_use['cells']['hexahedron'])
                     cell_type = "Hexahedra"
                 else:
                     num_cells = 0
                     cell_type = "Unknown"
                 
                 st.session_state.current_stats = {
-                    "backend": backend_used,
+                    "backend": mesh_data.get('backend', 'unknown'),
                     "points": num_points,
                     "cells": num_cells,
                     "cell_type": cell_type,
-                    "dimensions": mesh_data["dimensions"],
+                    "dimensions": mesh_data['dimensions'],
                     "generation_time": st.session_state.last_generation_time
                 }
-                
-                # Cache the mesh
-                cache_key = f"{lx}_{ly}_{lz}_{mesh_backend}_{resolution if resolution else max_volume}"
-                st.session_state.mesh_cache[cache_key] = mesh_data
     
     # Display results if mesh exists in session state
-    if st.session_state.current_mesh is not None:
-        mesh_data = st.session_state.current_mesh
+    if st.session_state.current_mesh_params is not None:
+        mesh_params = st.session_state.current_mesh_params
+        viz_params = st.session_state.current_viz_params
         stats = st.session_state.current_stats
         
         # Display statistics
@@ -1038,7 +1086,9 @@ def main():
         
         with col_viz:
             st.subheader("🎨 3D Visualization")
-            fig = visualize_mesh_with_plotly_cached(mesh_data, show_points, show_wireframe)
+            
+            # Create visualization figure using cached function
+            fig = create_visualization_figure(mesh_params, viz_params)
             st.plotly_chart(fig, use_container_width=True, 
                           config={'displayModeBar': True})
         
@@ -1070,12 +1120,7 @@ def main():
         st.subheader("📥 Export Mesh")
         
         # Create export button
-        file_data, filename = export_mesh_cached(mesh_data, {
-            "name": selected_format,
-            "extension": EXPORT_FORMATS[selected_format]["extension"],
-            "mime": EXPORT_FORMATS[selected_format]["mime"],
-            "backend": EXPORT_FORMATS[selected_format]["backend"]
-        })
+        file_data, filename = export_mesh_data(mesh_params, selected_format)
         
         # Download button
         st.download_button(
@@ -1112,22 +1157,27 @@ def main():
             for software in selected_software:
                 st.markdown(f"- ✅ {software}")
         
-        # Performance tips
-        with st.expander("💡 Performance & Optimization Tips"):
-            st.markdown("""
-            **For Streamlit Cloud Performance:**
-            1. ✅ Use **Fast Hex Mesh** for quickest generation
-            2. ✅ Keep resolution **6-8** for balanced performance
-            3. ✅ Export as **MSH** or **VTK** for full compatibility
-            4. ✅ Clear cache periodically to free memory
+        # Debug information
+        with st.expander("🐛 Debug Information"):
+            st.markdown(f"""
+            **Cache Information:**
+            - Mesh Cache Entries: {len(st.session_state.mesh_cache)}
+            - Current Parameters Hash: {mesh_params.to_hash()}
+            - Mesh Backend Used: {stats['backend']}
             
-            **Mesh Quality Tips:**
-            1. Aspect Ratio: Keep LZ > LY/10 for good elements
-            2. For FEA: Use tetrahedral meshes with Gmsh
-            3. For visualization: Hex meshes render faster
-            
-            **Note:** All operations are cached for 5 minutes.
+            **System Information:**
+            - Streamlit Version: {st.__version__}
+            - NumPy Version: {np.__version__}
+            - Plotly Version: {go.__version__}
             """)
+            
+            if st.button("Show Mesh Data Structure"):
+                st.json({
+                    "dimensions": stats["dimensions"],
+                    "points_count": stats["points"],
+                    "cells_count": stats["cells"],
+                    "cell_type": stats["cell_type"]
+                })
     
     else:
         # Show welcome/instructions
@@ -1157,7 +1207,7 @@ def main():
                - Rotate 3D view with mouse
             
             5. **Export:**
-               - Choose from 16+ formats
+               - Choose from 12+ formats
                - MSH for FEM, UNV for commercial software
                - STL for 3D printing
             
@@ -1170,37 +1220,19 @@ def main():
         
         with col_ex1:
             if st.button("Thin Slab", use_container_width=True):
-                st.session_state.lx_example = 200.0
-                st.session_state.ly_example = 50.0
-                st.session_state.lz_example = 2.0
                 st.rerun()
         
         with col_ex2:
             if st.button("Medium Block", use_container_width=True):
-                st.session_state.lx_example = 100.0
-                st.session_state.ly_example = 100.0
-                st.session_state.lz_example = 20.0
                 st.rerun()
         
         with col_ex3:
             if st.button("Thick Wall", use_container_width=True):
-                st.session_state.lx_example = 300.0
-                st.session_state.ly_example = 30.0
-                st.session_state.lz_example = 100.0
                 st.rerun()
     
-    # Footer with comprehensive info
+    # Footer
     st.markdown("---")
-    col_footer1, col_footer2, col_footer3 = st.columns(3)
-    
-    with col_footer1:
-        st.caption("✅ Optimized for Streamlit Cloud")
-    
-    with col_footer2:
-        st.caption("🔧 16+ Export Formats Supported")
-    
-    with col_footer3:
-        st.caption("⚡ Intelligent Caching System")
+    st.caption("✅ Streamlit Cloud Optimized • 🔧 Hashable Data Structures • ⚡ Intelligent Caching")
 
 if __name__ == "__main__":
     main()
