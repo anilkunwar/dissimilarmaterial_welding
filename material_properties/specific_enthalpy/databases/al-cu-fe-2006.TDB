@@ -1,6 +1,8 @@
 $ Database file written on December 04, 2006
 $ From database: USER   
 $ Hai-Lin Chen
+$ Reference Paper: https://www.sciencedirect.com/science/article/abs/pii/S0364591611001015?via%3Dihub
+$ DOI: https://doi.org/10.1016/j.calphad.2011.10.002
 
  ELEMENT /-   ELECTRON_GAS              0.0000E+00  0.0000E+00  0.0000E+00!
  ELEMENT VA   VACUUM                    0.0000E+00  0.0000E+00  0.0000E+00!
@@ -380,3 +382,4 @@ $  +0.62*GHSERAL+V71+V72*T;   6000   N !
  PARAM G(TS01TI,FE:AL:AL;0)  298.15  +0.125*GHSERFE+0.875*GHSERAL
   -8.87594929E+03;   6000   N !
 $ *************************************************************
+
