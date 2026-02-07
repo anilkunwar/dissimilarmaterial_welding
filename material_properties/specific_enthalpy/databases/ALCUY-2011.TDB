@@ -1,5 +1,6 @@
 $ Database file written  by Dr. Ligang Zhang 09-06-2011
-$
+$ Reference: Zhang et al., 2011,  https://www.sciencedirect.com/science/article/abs/pii/S0364591611000988?via%3Dihub
+$ DOI:  https://doi.org/10.1016/j.calphad.2011.09.008
  ELEMENT /-   ELECTRON_GAS              0.0000E+00  0.0000E+00  0.0000E+00!
  ELEMENT VA   VACUUM                    0.0000E+00  0.0000E+00  0.0000E+00!
  ELEMENT AL   FCC_A1                    2.6982E+01  4.5773E+03  2.8322E+01!
@@ -471,4 +472,5 @@ $
      25
     293
   ! 
+
 
