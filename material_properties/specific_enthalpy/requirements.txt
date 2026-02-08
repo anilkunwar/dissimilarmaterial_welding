@@ -6,3 +6,4 @@ scipy
 pycalphad
 xarray
 sympy
+plotly
