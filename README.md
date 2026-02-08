@@ -13,5 +13,5 @@ Computation of Molar and Specific Enthalpy of Multimaterial Systems
 
 [![meaningtowords](https://img.shields.io/badge/hcompute1-streamlit-red)](https://enthalpy-computation1.streamlit.app/) (basic design)
 
-[![meaningtowords](https://img.shields.io/badge/hcompute2-streamlit-red)](https://enthalpy-computation2.streamlit.app/) (advanced features for multimaterial design)
+[![meaningtowords](https://img.shields.io/badge/hcompute2-streamlit-red)](https://enthalpy-computation2.streamlit.app/) (advanced features for multimaterial design, only HM is computed and postprocessed whereas the other thermodynamic features such as GM, SM and CP are computed but not postprocessed)
 
