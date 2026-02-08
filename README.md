@@ -11,4 +11,7 @@
 
 Computation of Molar and Specific Enthalpy of Multimaterial Systems
 
-[![meaningtowords](https://img.shields.io/badge/hcompute1-streamlit-red)](https://enthalpy-computation1.streamlit.app/)
+[![meaningtowords](https://img.shields.io/badge/hcompute1-streamlit-red)](https://enthalpy-computation1.streamlit.app/) (basic design)
+
+[![meaningtowords](https://img.shields.io/badge/hcompute2-streamlit-red)](https://enthalpy-computation2.streamlit.app/) (advanced features for multimaterial design)
+
