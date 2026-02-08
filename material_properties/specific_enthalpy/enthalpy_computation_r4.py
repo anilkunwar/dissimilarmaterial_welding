@@ -119,12 +119,12 @@ st.markdown("""
         border: 1px solid #ddd;
         margin: 10px 0;
     }
-    .comp-sync-box {
-        background-color: #f0f7ff;
-        border: 2px solid #4CAF50;
-        padding: 10px;
+    .column-selector {
+        background-color: #f0f8ff;
+        padding: 15px;
         border-radius: 8px;
-        margin: 5px 0;
+        border: 1px solid #b3d9ff;
+        margin: 10px 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -296,11 +296,7 @@ class EnthalpyAnalyzer:
             'figure_height': 10,
             'tick_size': 11,
             'label_fontsize': 12,
-            'legend_padding': 0.01,
-            'title_padding': 20,
-            'label_padding': 15,
-            'tick_padding': 10,
-            'subplot_spacing': 0.3
+            'annotation_padding': 0.05
         }
     
     def get_available_tdb_files(self):
@@ -411,7 +407,7 @@ class EnthalpyAnalyzer:
         except:
             return None
     
-    def format_dat_file(self, df, composition, metadata=None):
+    def format_dat_file(self, df, composition, metadata=None, columns=None):
         """Format data in DAT file format with headers and customizable columns"""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         dat_lines = [
@@ -427,13 +423,17 @@ class EnthalpyAnalyzer:
         dat_lines.append("#" + "-"*60)
         
         # Dynamic header based on columns present
+        if columns is None:
+            columns = ['Temperature_K', 'Enthalpy_J_mol', 'Enthalpy_J_kg']
+        
         header_parts = []
-        if 'Temperature_K' in df.columns:
-            header_parts.append("Temperature(K)")
-        if 'Enthalpy_J_mol' in df.columns:
-            header_parts.append("Enthalpy(J/mol)")
-        if 'Enthalpy_J_kg' in df.columns:
-            header_parts.append("Enthalpy(J/kg)")
+        for col in columns:
+            if col == 'Temperature_K':
+                header_parts.append("Temperature(K)")
+            elif col == 'Enthalpy_J_mol':
+                header_parts.append("Enthalpy(J/mol)")
+            elif col == 'Enthalpy_J_kg':
+                header_parts.append("Enthalpy(J/kg)")
         
         dat_lines.append("# " + "    ".join(header_parts))
         dat_lines.append("#" + "-"*60)
@@ -441,12 +441,13 @@ class EnthalpyAnalyzer:
         # Dynamic formatting based on columns
         for _, row in df.iterrows():
             line_parts = []
-            if 'Temperature_K' in df.columns:
-                line_parts.append(f"{row['Temperature_K']:15.2f}")
-            if 'Enthalpy_J_mol' in df.columns:
-                line_parts.append(f"{row['Enthalpy_J_mol']:18.4f}")
-            if 'Enthalpy_J_kg' in df.columns:
-                line_parts.append(f"{row['Enthalpy_J_kg']:18.4f}")
+            for col in columns:
+                if col == 'Temperature_K':
+                    line_parts.append(f"{row[col]:15.2f}")
+                elif col == 'Enthalpy_J_mol':
+                    line_parts.append(f"{row[col]:18.4f}")
+                elif col == 'Enthalpy_J_kg':
+                    line_parts.append(f"{row[col]:18.4f}")
             
             dat_lines.append(" ".join(line_parts))
         
@@ -471,13 +472,9 @@ def create_enhanced_visualization(df, composition, material_name="Alloy", custom
     figure_height = customizations.get('figure_height', 10)
     tick_size = customizations.get('tick_size', 11)
     label_fontsize = customizations.get('label_fontsize', 12)
-    legend_padding = customizations.get('legend_padding', 0.01)
-    title_padding = customizations.get('title_padding', 20)
-    label_padding = customizations.get('label_padding', 15)
-    tick_padding = customizations.get('tick_padding', 10)
-    subplot_spacing = customizations.get('subplot_spacing', 0.3)
+    annotation_padding = customizations.get('annotation_padding', 0.05)
     
-    # Create figure with dynamic spacing
+    # Create figure with enhanced spacing
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(figure_width, figure_height), dpi=150)
     
     # Generate color based on composition hash
@@ -492,7 +489,7 @@ def create_enhanced_visualization(df, composition, material_name="Alloy", custom
     markers = ['o', 's', '^', 'v', '<', '>', 'p', '*', 'h', 'H', '+', 'x', 'D']
     marker = markers[int(color_hash * len(markers))]
     
-    # Molar enthalpy plot
+    # Molar enthalpy plot with enhanced padding
     ax1.plot(df['Temperature_K'], df['Enthalpy_J_mol'],
              color=line_color, linewidth=curve_thickness,
              marker=marker, markersize=marker_size,
@@ -507,29 +504,27 @@ def create_enhanced_visualization(df, composition, material_name="Alloy", custom
         ax1.axvspan(Tm-50, Tm+50, alpha=0.15, color='red', label='Melting Region')
     
     # Enhanced label placement with increased padding
-    ax1.set_xlabel('Temperature (K)', fontsize=label_fontsize, fontweight='bold', labelpad=label_padding)
-    ax1.set_ylabel('Enthalpy (J/mol)', fontsize=label_fontsize, fontweight='bold', labelpad=label_padding)
+    ax1.set_xlabel('Temperature (K)', fontsize=label_fontsize, fontweight='bold', labelpad=15)
+    ax1.set_ylabel('Enthalpy (J/mol)', fontsize=label_fontsize, fontweight='bold', labelpad=15)
     ax1.set_title(f'Molar Enthalpy vs Temperature - {material_name}',
-                 fontsize=title_font_size, fontweight='bold', pad=title_padding)
+                 fontsize=title_font_size, fontweight='bold', pad=25)
     ax1.grid(True, alpha=grid_alpha, linestyle='--')
     
     # SMART legend placement to avoid overlap
     if legend_location == 'best':
-        # Calculate dynamic legend position based on data
-        x_range = df['Temperature_K'].max() - df['Temperature_K'].min()
-        y_range = df['Enthalpy_J_mol'].max() - df['Enthalpy_J_mol'].min()
-        
-        # Place legend in top-left corner with padding
+        # Place legend in upper left with dynamic positioning
         legend = ax1.legend(fontsize=legend_font_size, framealpha=0.9, loc='upper left',
-                           bbox_to_anchor=(legend_padding, 0.99 - legend_padding),
-                           borderaxespad=0.5)
+                           bbox_to_anchor=(0.01, 0.99), shadow=True, borderpad=1.5)
     else:
         legend = ax1.legend(loc=legend_location, fontsize=legend_font_size, framealpha=0.9,
-                           borderaxespad=0.8)
+                           shadow=True, borderpad=1.5)
+    
+    legend.get_frame().set_edgecolor('black')
+    legend.get_frame().set_linewidth(1.5)
     
     # Set tick parameters with improved size and padding
-    ax1.tick_params(axis='both', which='major', labelsize=tick_size, pad=tick_padding)
-    ax1.tick_params(axis='both', which='minor', labelsize=tick_size-2, pad=tick_padding-2)
+    ax1.tick_params(axis='both', which='major', labelsize=tick_size, pad=10)
+    ax1.tick_params(axis='both', which='minor', labelsize=tick_size-2, pad=8)
     
     # Set box thickness
     for spine in ax1.spines.values():
@@ -548,24 +543,26 @@ def create_enhanced_visualization(df, composition, material_name="Alloy", custom
         ax2.axvspan(Tm-50, Tm+50, alpha=0.15, color='red')
     
     # Enhanced label placement
-    ax2.set_xlabel('Temperature (K)', fontsize=label_fontsize, fontweight='bold', labelpad=label_padding)
-    ax2.set_ylabel('Specific Enthalpy (J/kg)', fontsize=label_fontsize, fontweight='bold', labelpad=label_padding)
+    ax2.set_xlabel('Temperature (K)', fontsize=label_fontsize, fontweight='bold', labelpad=15)
+    ax2.set_ylabel('Specific Enthalpy (J/kg)', fontsize=label_fontsize, fontweight='bold', labelpad=15)
     ax2.set_title(f'Specific Enthalpy vs Temperature - {material_name}',
-                 fontsize=title_font_size, fontweight='bold', pad=title_padding)
+                 fontsize=title_font_size, fontweight='bold', pad=25)
     ax2.grid(True, alpha=grid_alpha, linestyle='--')
     
     # SMART legend placement
     if legend_location == 'best':
-        ax2.legend(fontsize=legend_font_size, framealpha=0.9, loc='upper left',
-                  bbox_to_anchor=(legend_padding, 0.99 - legend_padding),
-                  borderaxespad=0.5)
+        ax2_legend = ax2.legend(fontsize=legend_font_size, framealpha=0.9, loc='upper left',
+                               bbox_to_anchor=(0.01, 0.99), shadow=True, borderpad=1.5)
     else:
-        ax2.legend(loc=legend_location, fontsize=legend_font_size, framealpha=0.9,
-                  borderaxespad=0.8)
+        ax2_legend = ax2.legend(loc=legend_location, fontsize=legend_font_size, framealpha=0.9,
+                               shadow=True, borderpad=1.5)
+    
+    ax2_legend.get_frame().set_edgecolor('black')
+    ax2_legend.get_frame().set_linewidth(1.5)
     
     # Set tick parameters
-    ax2.tick_params(axis='both', which='major', labelsize=tick_size, pad=tick_padding)
-    ax2.tick_params(axis='both', which='minor', labelsize=tick_size-2, pad=tick_padding-2)
+    ax2.tick_params(axis='both', which='major', labelsize=tick_size, pad=10)
+    ax2.tick_params(axis='both', which='minor', labelsize=tick_size-2, pad=8)
     
     # Set box thickness
     for spine in ax2.spines.values():
@@ -576,10 +573,12 @@ def create_enhanced_visualization(df, composition, material_name="Alloy", custom
     if len(composition) > 4:
         comp_text += f", ... (+{len(composition)-4} more)"
     
-    # Position composition text at bottom with buffer
-    fig.text(0.5, 0.01, f'Composition: {comp_text}',
-             ha='center', fontsize=max(8, font_size-1), style='italic', alpha=0.8,
-             fontweight='medium', bbox=dict(boxstyle='round,pad=0.5', facecolor='wheat', alpha=0.3))
+    # Position composition text at bottom with dynamic buffer based on figure height
+    bottom_padding = 0.02 + (annotation_padding * 0.5)
+    fig.text(0.5, bottom_padding, f'Composition: {comp_text}',
+             ha='center', fontsize=font_size-1, style='italic', alpha=0.9,
+             fontweight='medium', bbox=dict(boxstyle='round,pad=0.8', facecolor='wheat', 
+                                          alpha=0.4, edgecolor='orange', linewidth=1))
     
     # Add statistics box with DYNAMIC positioning to avoid overlap
     stats_text = f"""Statistics:
@@ -588,18 +587,24 @@ def create_enhanced_visualization(df, composition, material_name="Alloy", custom
 • Points: {len(df)}"""
     
     # Position stats box in top-right corner with padding
-    fig.text(0.98, 0.98, stats_text, transform=fig.transFigure,
-             fontsize=max(8, font_size-1), verticalalignment='top', horizontalalignment='right',
+    right_padding = 0.98 - annotation_padding
+    top_padding = 0.98 - annotation_padding
+    fig.text(right_padding, top_padding, stats_text, transform=fig.transFigure,
+             fontsize=font_size-1, verticalalignment='top', horizontalalignment='right',
              bbox=dict(boxstyle='round,pad=0.8', facecolor='lightblue', alpha=0.7,
                       linewidth=1.5, edgecolor='navy'))
     
     # ENHANCED layout with dynamic padding based on figure size
-    # Adjust padding based on figure size
-    bottom_padding = 0.08 if figure_height > 8 else 0.12
-    top_padding = 0.92 if figure_height > 8 else 0.88
+    left_margin = annotation_padding
+    right_margin = 1.0 - annotation_padding
+    bottom_margin = annotation_padding * 2
+    top_margin = 1.0 - (annotation_padding * 0.5)
     
-    plt.tight_layout(rect=[0.02, bottom_padding, 0.98, top_padding], 
-                     h_pad=subplot_spacing * 3, w_pad=subplot_spacing * 2)
+    plt.tight_layout(rect=[left_margin, bottom_margin, right_margin, top_margin], 
+                    h_pad=3.0, w_pad=2.0)
+    
+    # Enable constrained layout for additional auto-adjustment
+    fig.set_constrained_layout(True)
     
     return fig
 
@@ -624,15 +629,11 @@ def create_comparison_visualization(analyzer, selected_indices, customizations=N
     figure_height = customizations.get('figure_height', 12)
     tick_size = customizations.get('tick_size', 11)
     label_fontsize = customizations.get('label_fontsize', 12)
-    legend_padding = customizations.get('legend_padding', 0.01)
-    title_padding = customizations.get('title_padding', 20)
-    label_padding = customizations.get('label_padding', 15)
-    tick_padding = customizations.get('tick_padding', 10)
-    subplot_spacing = customizations.get('subplot_spacing', 0.3)
+    annotation_padding = customizations.get('annotation_padding', 0.05)
     
     # Create figure with enhanced layout
     fig = plt.figure(figsize=(figure_width, figure_height), dpi=150)
-    gs = fig.add_gridspec(3, 3, hspace=subplot_spacing, wspace=subplot_spacing)
+    gs = fig.add_gridspec(3, 3, hspace=0.4, wspace=0.4)  # Increased spacing
     
     ax1 = fig.add_subplot(gs[0, :])  # Molar enthalpy comparison
     ax2 = fig.add_subplot(gs[1, 0:2])  # Specific enthalpy comparison
@@ -662,27 +663,24 @@ def create_comparison_visualization(analyzer, selected_indices, customizations=N
         data = result['data']
         name = result['name']
         
-        # Truncate name if too long
-        display_name = name[:20] + '...' if len(name) > 20 else name
-        
         # Molar enthalpy
         ax1.plot(data['Temperature_K'], data['Enthalpy_J_mol'],
                 color=colors[i], linewidth=curve_thickness,
                 marker=markers[i % len(markers)], markersize=5,
                 markevery=max(1, len(data)//30),
-                label=display_name, alpha=0.9)
+                label=name, alpha=0.9)
         
         # Specific enthalpy
         ax2.plot(data['Temperature_K'], data['Enthalpy_J_kg'],
                 color=colors[i], linewidth=curve_thickness,
                 marker=markers[i % len(markers)], markersize=5,
                 markevery=max(1, len(data)//30),
-                label=display_name, alpha=0.9)
+                label=name, alpha=0.9)
         
         # Calculate ΔH for bar chart
         delta_h = data['Enthalpy_J_mol'].max() - data['Enthalpy_J_mol'].min()
         delta_h_values.append(delta_h)
-        material_names.append(display_name)
+        material_names.append(name)
         
         # Check for melting temperature in fitting results
         Tm = None
@@ -699,39 +697,37 @@ def create_comparison_visualization(analyzer, selected_indices, customizations=N
             ax2.axvline(Tm, color=colors[i], linestyle='--', alpha=0.7, linewidth=1.5)
     
     # Format molar enthalpy plot with improved label placement
-    ax1.set_xlabel('Temperature (K)', fontsize=label_fontsize, fontweight='bold', labelpad=label_padding)
-    ax1.set_ylabel('Enthalpy (J/mol)', fontsize=label_fontsize, fontweight='bold', labelpad=label_padding)
-    ax1.set_title('Molar Enthalpy Comparison', fontsize=title_font_size, fontweight='bold', pad=title_padding)
+    ax1.set_xlabel('Temperature (K)', fontsize=label_fontsize, fontweight='bold', labelpad=12)
+    ax1.set_ylabel('Enthalpy (J/mol)', fontsize=label_fontsize, fontweight='bold', labelpad=12)
+    ax1.set_title('Molar Enthalpy Comparison', fontsize=title_font_size, fontweight='bold', pad=20)
     ax1.grid(True, alpha=grid_alpha, linestyle='--')
-    
-    # Smart legend placement with multi-column layout for many materials
-    ncol = 2 if len(selected_indices) > 5 else 1
-    ax1.legend(loc=legend_location, fontsize=max(8, legend_font_size-1), ncol=ncol, 
-               framealpha=0.9, borderaxespad=0.8)
-    ax1.tick_params(axis='both', labelsize=tick_size, pad=tick_padding)
+    ax1.legend(loc=legend_location, fontsize=legend_font_size, ncol=2, framealpha=0.9,
+              shadow=True, borderpad=1)
+    ax1.tick_params(axis='both', labelsize=tick_size, pad=8)
     
     # Format specific enthalpy plot
-    ax2.set_xlabel('Temperature (K)', fontsize=label_fontsize, fontweight='bold', labelpad=label_padding)
-    ax2.set_ylabel('Specific Enthalpy (J/kg)', fontsize=label_fontsize, fontweight='bold', labelpad=label_padding)
-    ax2.set_title('Specific Enthalpy Comparison', fontsize=title_font_size, fontweight='bold', pad=title_padding)
+    ax2.set_xlabel('Temperature (K)', fontsize=label_fontsize, fontweight='bold', labelpad=12)
+    ax2.set_ylabel('Specific Enthalpy (J/kg)', fontsize=label_fontsize, fontweight='bold', labelpad=12)
+    ax2.set_title('Specific Enthalpy Comparison', fontsize=title_font_size, fontweight='bold', pad=20)
     ax2.grid(True, alpha=grid_alpha, linestyle='--')
-    ax2.legend(loc=legend_location, fontsize=legend_font_size, framealpha=0.9, borderaxespad=0.8)
-    ax2.tick_params(axis='both', labelsize=tick_size, pad=tick_padding)
+    ax2.legend(loc=legend_location, fontsize=legend_font_size, framealpha=0.9,
+              shadow=True, borderpad=1)
+    ax2.tick_params(axis='both', labelsize=tick_size, pad=8)
     
     # ΔH bar chart
     bars = ax3.barh(range(len(delta_h_values)), delta_h_values, color=colors[:len(material_names)])
     ax3.set_yticks(range(len(material_names)))
-    ax3.set_yticklabels(material_names, fontsize=max(8, legend_font_size-1))
-    ax3.set_xlabel('ΔH (J/mol)', fontsize=label_fontsize, fontweight='bold', labelpad=label_padding)
-    ax3.set_title('Total Enthalpy Change', fontsize=title_font_size, fontweight='bold', pad=title_padding)
+    ax3.set_yticklabels(material_names, fontsize=legend_font_size)
+    ax3.set_xlabel('ΔH (J/mol)', fontsize=label_fontsize, fontweight='bold', labelpad=10)
+    ax3.set_title('Total Enthalpy Change', fontsize=title_font_size, fontweight='bold', pad=15)
     ax3.grid(True, alpha=grid_alpha, axis='x', linestyle='--')
-    ax3.tick_params(axis='both', labelsize=tick_size, pad=tick_padding)
+    ax3.tick_params(axis='both', labelsize=tick_size, pad=8)
     
     # Add value labels on bars with improved positioning
     for bar, value in zip(bars, delta_h_values):
         ax3.text(value, bar.get_y() + bar.get_height()/2, 
-                f' {value:,.0f}', va='center', fontsize=max(7, legend_font_size-2),
-                fontweight='bold')
+                f' {value:,.0f}', va='center', fontsize=legend_font_size,
+                fontweight='bold', bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7))
     
     # Melting temperature comparison
     valid_temps = [(name, temp) for name, temp in zip(material_names, melting_temps) if temp is not None]
@@ -740,22 +736,23 @@ def create_comparison_visualization(analyzer, selected_indices, customizations=N
         bars_tm = ax4.bar(range(len(temps)), temps, color=colors[:len(temps)])
         ax4.set_xticks(range(len(temps)))
         ax4.set_xticklabels(names, rotation=45, fontsize=legend_font_size, ha='right')
-        ax4.set_ylabel('Melting Temperature (K)', fontsize=label_fontsize, fontweight='bold', labelpad=label_padding)
+        ax4.set_ylabel('Melting Temperature (K)', fontsize=label_fontsize, fontweight='bold', labelpad=10)
         ax4.set_title('Melting Temperature Comparison (from Fitted Equation)', 
-                     fontsize=title_font_size, fontweight='bold', pad=title_padding)
+                     fontsize=title_font_size, fontweight='bold', pad=20)
         ax4.grid(True, alpha=grid_alpha, axis='y', linestyle='--')
-        ax4.tick_params(axis='both', labelsize=tick_size, pad=tick_padding)
+        ax4.tick_params(axis='both', labelsize=tick_size, pad=8)
         
         # Add value labels with improved positioning
         for bar, temp in zip(bars_tm, temps):
             ax4.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
                     f'{temp:.1f} K', ha='center', va='bottom', 
-                    fontsize=legend_font_size, fontweight='bold')
+                    fontsize=legend_font_size, fontweight='bold',
+                    bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7))
     else:
         ax4.text(0.5, 0.5, 'No melting temperature data available.\nPerform curve fitting first.',
                 ha='center', va='center', transform=ax4.transAxes, 
                 fontsize=font_size, fontweight='medium')
-        ax4.set_title('Melting Temperature Comparison', fontsize=title_font_size, fontweight='bold', pad=title_padding)
+        ax4.set_title('Melting Temperature Comparison', fontsize=title_font_size, fontweight='bold', pad=20)
     
     # Set box thickness for all axes
     for ax in [ax1, ax2, ax3, ax4]:
@@ -765,157 +762,11 @@ def create_comparison_visualization(analyzer, selected_indices, customizations=N
     plt.suptitle('Multi-Material Enthalpy Comparison Dashboard', 
                 fontsize=title_font_size+2, fontweight='bold', y=0.98)
     
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.tight_layout(rect=[annotation_padding, annotation_padding, 
+                          1-annotation_padding, 0.96])
+    fig.set_constrained_layout(True)
+    
     return fig
-
-def create_curve_fitting_visualization(T_data, H_data, T_fit, H_fit, fit_params, residuals, 
-                                      r_squared, rmse, material_name, composition, 
-                                      molar_weight, customizations=None):
-    """Create comprehensive curve fitting visualization with enhanced label placement"""
-    if customizations is None:
-        customizations = {}
-    
-    # Apply customizations
-    curve_thickness = customizations.get('curve_thickness', 2.5)
-    box_thickness = customizations.get('box_thickness', 1.0)
-    font_size = customizations.get('font_size', 12)
-    title_font_size = customizations.get('title_font_size', 14)
-    legend_font_size = customizations.get('legend_font_size', 10)
-    colormap = customizations.get('colormap', 'viridis')
-    grid_alpha = customizations.get('grid_alpha', 0.3)
-    figure_width = customizations.get('figure_width', 16)
-    figure_height = customizations.get('figure_height', 12)
-    tick_size = customizations.get('tick_size', 11)
-    label_fontsize = customizations.get('label_fontsize', 12)
-    legend_padding = customizations.get('legend_padding', 0.01)
-    title_padding = customizations.get('title_padding', 20)
-    label_padding = customizations.get('label_padding', 15)
-    tick_padding = customizations.get('tick_padding', 10)
-    subplot_spacing = customizations.get('subplot_spacing', 0.3)
-    
-    A1_fit, A2_fit, Tm_fit, DeltaHf_fit, k_fit, H298_fit = fit_params
-    
-    # Create figure with enhanced layout
-    fig = plt.figure(figsize=(figure_width, figure_height), dpi=150)
-    gs = fig.add_gridspec(3, 3, hspace=subplot_spacing, wspace=subplot_spacing)
-    
-    # Main fit plot with enhanced padding
-    ax1 = fig.add_subplot(gs[0:2, :])
-    ax1.scatter(T_data, H_data, alpha=0.6, label='Original Data', 
-               color='#1E88E5', s=50, edgecolors='white', linewidth=1)
-    ax1.plot(T_fit, H_fit, 'r-', linewidth=curve_thickness+1, label='Fitted Curve', alpha=0.9)
-    
-    # Highlight melting temperature with colorful style
-    ax1.axvline(Tm_fit, color='red', linestyle='--', alpha=0.9, linewidth=2.5,
-              label=f'Melting Point Tₘ = {Tm_fit:.1f} K')
-    
-    # Add shaded melting region
-    ax1.axvspan(Tm_fit-50, Tm_fit+50, alpha=0.2, color='orange', label='Melting Region')
-    
-    # Add text annotation for Tm with improved positioning
-    y_range = ax1.get_ylim()
-    y_pos = y_range[0] + 0.15*(y_range[1]-y_range[0])
-    ax1.text(Tm_fit, y_pos, f'Tm = {Tm_fit:.1f} K', rotation=90, 
-            verticalalignment='bottom', fontsize=label_fontsize, 
-            fontweight='bold', color='red', bbox=dict(boxstyle='round', 
-            facecolor='white', alpha=0.8, edgecolor='red', pad=2))
-    
-    # Enhanced labels and titles
-    ax1.set_xlabel('Temperature (K)', fontsize=label_fontsize, fontweight='bold', labelpad=label_padding)
-    ax1.set_ylabel('Enthalpy (J/mol)', fontsize=label_fontsize, fontweight='bold', labelpad=label_padding)
-    ax1.set_title(f'Enthalpy-Temperature Curve Fitting - {material_name}', 
-                 fontsize=title_font_size+2, fontweight='bold', pad=title_padding+5)
-    ax1.grid(True, alpha=grid_alpha, linestyle='--')
-    
-    # Enhanced legend placement
-    ax1.legend(loc='best', fontsize=legend_font_size, framealpha=0.9, 
-              borderpad=1, labelspacing=0.5, handlelength=2)
-    
-    # Set tick parameters
-    ax1.tick_params(axis='both', which='major', labelsize=tick_size, pad=tick_padding)
-    ax1.tick_params(axis='both', which='minor', labelsize=tick_size-2, pad=tick_padding-2)
-    
-    # Residual plot
-    ax2 = fig.add_subplot(gs[2, 0])
-    ax2.scatter(T_data, residuals, alpha=0.7, color='#FF7043', s=40)
-    ax2.axhline(y=0, color='r', linestyle='--', alpha=0.7, linewidth=2)
-    ax2.set_xlabel('Temperature (K)', fontsize=label_fontsize, fontweight='bold', labelpad=label_padding)
-    ax2.set_ylabel('Residuals (J/mol)', fontsize=label_fontsize, fontweight='bold', labelpad=label_padding)
-    ax2.set_title('Residual Plot', fontsize=title_font_size, fontweight='bold', pad=title_padding-5)
-    ax2.grid(True, alpha=grid_alpha, linestyle='--')
-    ax2.tick_params(axis='both', labelsize=tick_size, pad=tick_padding)
-    
-    # Specific enthalpy fit
-    ax3 = fig.add_subplot(gs[2, 1])
-    H_specific_fit = H_fit / (molar_weight / 1000.0)
-    ax3.plot(T_fit, H_specific_fit, 'purple', linewidth=curve_thickness, alpha=0.9)
-    ax3.axvline(Tm_fit, color='red', linestyle='--', alpha=0.7, linewidth=1.5)
-    ax3.set_xlabel('Temperature (K)', fontsize=label_fontsize, fontweight='bold', labelpad=label_padding)
-    ax3.set_ylabel('Enthalpy (J/kg)', fontsize=label_fontsize, fontweight='bold', labelpad=label_padding)
-    ax3.set_title('Fitted Specific Enthalpy', fontsize=title_font_size, fontweight='bold', pad=title_padding-5)
-    ax3.grid(True, alpha=grid_alpha, linestyle='--')
-    ax3.tick_params(axis='both', labelsize=tick_size, pad=tick_padding)
-    
-    # Coefficient summary with enhanced formatting
-    ax4 = fig.add_subplot(gs[2, 2])
-    ax4.axis('off')
-    
-    # Format coefficients with proper alignment and spacing
-    coeff_text = (
-        f"🔧 **Fitted Parameters:**\n\n"
-        f"• A₁ = {A1_fit:.4f} J/(mol·K)\n"
-        f"• A₂ = {A2_fit:.4f} J/(mol·K)\n"
-        f"• Tₘ = {Tm_fit:.2f} K\n"
-        f"• ΔHf = {DeltaHf_fit:,.0f} J/mol\n"
-        f"• k = {k_fit:.6f} 1/K\n"
-        f"• H₂₉₈ = {H298_fit:,.0f} J/mol\n"
-        f"• M = {molar_weight:.2f} g/mol\n\n"
-        f"📊 **Goodness of Fit:**\n"
-        f"• R² = {r_squared:.6f}\n"
-        f"• RMSE = {rmse:.2f} J/mol\n"
-        f"• Data Points = {len(T_data)}"
-    )
-    
-    # Add text with enhanced padding and formatting
-    ax4.text(0.1, 0.95, coeff_text, transform=ax4.transAxes,
-            fontsize=max(10, label_fontsize-1), verticalalignment='top',
-            bbox=dict(boxstyle='round', facecolor='lightblue', 
-                     alpha=0.8, pad=15, linewidth=2, edgecolor='navy'))
-    
-    # Set box thickness for all axes
-    for ax in [ax1, ax2, ax3]:
-        for spine in ax.spines.values():
-            spine.set_linewidth(box_thickness)
-    
-    # Add composition info at the bottom
-    comp_text = 'Composition: ' + ', '.join([f'{e}={f:.3f}' for e, f in list(composition.items())[:4]])
-    if len(composition) > 4:
-        comp_text += f" ... (+{len(composition)-4} more)"
-    
-    fig.text(0.5, 0.02, comp_text, ha='center', fontsize=max(9, font_size-1), 
-            style='italic', alpha=0.8, fontweight='medium',
-            bbox=dict(boxstyle='round,pad=0.3', facecolor='wheat', alpha=0.3))
-    
-    plt.tight_layout(rect=[0, 0.03, 1, 0.97])
-    return fig
-
-def sync_composition_slider(element):
-    """Callback function to sync slider and number input values"""
-    slider_key = f"comp_slider_{element}"
-    num_key = f"comp_num_{element}"
-    
-    # If slider widget exists in session state, sync to number input
-    if f"{slider_key}_widget" in st.session_state:
-        st.session_state[f"{num_key}_value"] = st.session_state[f"{slider_key}_widget"]
-
-def sync_composition_number(element):
-    """Callback function to sync number input to slider"""
-    slider_key = f"comp_slider_{element}"
-    num_key = f"comp_num_{element}"
-    
-    # If number input widget exists in session state, sync to slider
-    if f"{num_key}_widget" in st.session_state:
-        st.session_state[f"{slider_key}_value"] = st.session_state[f"{num_key}_widget"]
 
 def create_interactive_plotly_visualization(df, composition, material_name, fitted_params=None):
     """Create interactive Plotly visualization"""
@@ -1004,6 +855,144 @@ def create_interactive_plotly_visualization(df, composition, material_name, fitt
     
     return fig
 
+def create_curve_fitting_visualization(T_data, H_data, T_fit, H_fit, fit_params, residuals, 
+                                      r_squared, rmse, material_name, composition, 
+                                      molar_weight, customizations=None):
+    """Create comprehensive curve fitting visualization with enhanced label placement"""
+    if customizations is None:
+        customizations = {}
+    
+    # Apply customizations
+    curve_thickness = customizations.get('curve_thickness', 2.5)
+    box_thickness = customizations.get('box_thickness', 1.0)
+    font_size = customizations.get('font_size', 12)
+    title_font_size = customizations.get('title_font_size', 14)
+    legend_font_size = customizations.get('legend_font_size', 10)
+    colormap = customizations.get('colormap', 'viridis')
+    grid_alpha = customizations.get('grid_alpha', 0.3)
+    figure_width = customizations.get('figure_width', 16)
+    figure_height = customizations.get('figure_height', 12)
+    tick_size = customizations.get('tick_size', 11)
+    label_fontsize = customizations.get('label_fontsize', 12)
+    annotation_padding = customizations.get('annotation_padding', 0.05)
+    
+    A1_fit, A2_fit, Tm_fit, DeltaHf_fit, k_fit, H298_fit = fit_params
+    
+    # Create figure with enhanced layout
+    fig = plt.figure(figsize=(figure_width, figure_height), dpi=150)
+    gs = fig.add_gridspec(3, 3, hspace=0.35, wspace=0.35)  # Increased spacing
+    
+    # Main fit plot with enhanced padding
+    ax1 = fig.add_subplot(gs[0:2, :])
+    ax1.scatter(T_data, H_data, alpha=0.6, label='Original Data', 
+               color='#1E88E5', s=50, edgecolors='white', linewidth=1)
+    ax1.plot(T_fit, H_fit, 'r-', linewidth=curve_thickness+1, label='Fitted Curve', alpha=0.9)
+    
+    # Highlight melting temperature with colorful style
+    ax1.axvline(Tm_fit, color='red', linestyle='--', alpha=0.9, linewidth=2.5,
+              label=f'Melting Point Tₘ = {Tm_fit:.1f} K')
+    
+    # Add shaded melting region
+    ax1.axvspan(Tm_fit-50, Tm_fit+50, alpha=0.2, color='orange', label='Melting Region')
+    
+    # Add text annotation for Tm with improved positioning
+    y_range = ax1.get_ylim()
+    y_pos = y_range[0] + 0.15*(y_range[1]-y_range[0])
+    ax1.text(Tm_fit, y_pos, f'Tm = {Tm_fit:.1f} K', rotation=90, 
+            verticalalignment='bottom', fontsize=label_fontsize, 
+            fontweight='bold', color='red', bbox=dict(boxstyle='round', 
+            facecolor='white', alpha=0.8, edgecolor='red', pad=3))
+    
+    # Enhanced labels and titles
+    ax1.set_xlabel('Temperature (K)', fontsize=label_fontsize, fontweight='bold', labelpad=15)
+    ax1.set_ylabel('Enthalpy (J/mol)', fontsize=label_fontsize, fontweight='bold', labelpad=15)
+    ax1.set_title(f'Enthalpy-Temperature Curve Fitting - {material_name}', 
+                 fontsize=title_font_size+2, fontweight='bold', pad=30)
+    ax1.grid(True, alpha=grid_alpha, linestyle='--')
+    
+    # Enhanced legend placement
+    legend = ax1.legend(loc='best', fontsize=legend_font_size, framealpha=0.9, 
+                       shadow=True, borderpad=1.5, labelspacing=0.5, handlelength=2)
+    legend.get_frame().set_edgecolor('black')
+    legend.get_frame().set_linewidth(1.5)
+    
+    # Set tick parameters
+    ax1.tick_params(axis='both', which='major', labelsize=tick_size, pad=12)
+    ax1.tick_params(axis='both', which='minor', labelsize=tick_size-2, pad=10)
+    
+    # Residual plot
+    ax2 = fig.add_subplot(gs[2, 0])
+    ax2.scatter(T_data, residuals, alpha=0.7, color='#FF7043', s=40)
+    ax2.axhline(y=0, color='r', linestyle='--', alpha=0.7, linewidth=2)
+    ax2.set_xlabel('Temperature (K)', fontsize=label_fontsize, fontweight='bold', labelpad=12)
+    ax2.set_ylabel('Residuals (J/mol)', fontsize=label_fontsize, fontweight='bold', labelpad=12)
+    ax2.set_title('Residual Plot', fontsize=title_font_size, fontweight='bold', pad=18)
+    ax2.grid(True, alpha=grid_alpha, linestyle='--')
+    ax2.tick_params(axis='both', labelsize=tick_size, pad=10)
+    
+    # Specific enthalpy fit
+    ax3 = fig.add_subplot(gs[2, 1])
+    H_specific_fit = H_fit / (molar_weight / 1000.0)
+    ax3.plot(T_fit, H_specific_fit, 'purple', linewidth=curve_thickness, alpha=0.9, label='Fitted')
+    ax3.axvline(Tm_fit, color='red', linestyle='--', alpha=0.7, linewidth=1.5, label=f'Tm = {Tm_fit:.1f} K')
+    ax3.set_xlabel('Temperature (K)', fontsize=label_fontsize, fontweight='bold', labelpad=12)
+    ax3.set_ylabel('Enthalpy (J/kg)', fontsize=label_fontsize, fontweight='bold', labelpad=12)
+    ax3.set_title('Fitted Specific Enthalpy', fontsize=title_font_size, fontweight='bold', pad=18)
+    ax3.grid(True, alpha=grid_alpha, linestyle='--')
+    ax3.tick_params(axis='both', labelsize=tick_size, pad=10)
+    ax3.legend(loc='best', fontsize=legend_font_size-1, framealpha=0.9, shadow=True)
+    
+    # Coefficient summary with enhanced formatting
+    ax4 = fig.add_subplot(gs[2, 2])
+    ax4.axis('off')
+    
+    # Format coefficients with proper alignment and spacing
+    coeff_text = (
+        f"🔧 **Fitted Parameters:**\n\n"
+        f"• A₁ = {A1_fit:.4f} J/(mol·K)\n"
+        f"• A₂ = {A2_fit:.4f} J/(mol·K)\n"
+        f"• Tₘ = {Tm_fit:.2f} K\n"
+        f"• ΔHf = {DeltaHf_fit:,.0f} J/mol\n"
+        f"• k = {k_fit:.6f} 1/K\n"
+        f"• H₂₉₈ = {H298_fit:,.0f} J/mol\n"
+        f"• M = {molar_weight:.2f} g/mol\n\n"
+        f"📊 **Goodness of Fit:**\n"
+        f"• R² = {r_squared:.6f}\n"
+        f"• RMSE = {rmse:.2f} J/mol\n"
+        f"• Data Points = {len(T_data)}"
+    )
+    
+    # Add text with enhanced padding and formatting
+    ax4.text(0.1, 0.95, coeff_text, transform=ax4.transAxes,
+            fontsize=label_fontsize-1, verticalalignment='top',
+            bbox=dict(boxstyle='round', facecolor='lightblue', 
+                     alpha=0.8, pad=18, linewidth=2.5, edgecolor='navy'))
+    
+    # Set box thickness for all axes
+    for ax in [ax1, ax2, ax3]:
+        for spine in ax.spines.values():
+            spine.set_linewidth(box_thickness)
+    
+    # Add composition info at the bottom with dynamic positioning
+    comp_text = 'Composition: ' + ', '.join([f'{e}={f:.3f}' for e, f in list(composition.items())[:4]])
+    if len(composition) > 4:
+        comp_text += f" ... (+{len(composition)-4} more)"
+    
+    fig.text(0.5, annotation_padding*0.5, comp_text, ha='center', fontsize=font_size-1, 
+            style='italic', alpha=0.9, fontweight='medium',
+            bbox=dict(boxstyle='round,pad=0.5', facecolor='wheat', alpha=0.3))
+    
+    # Enhanced layout
+    left_margin = annotation_padding
+    right_margin = 1.0 - annotation_padding
+    bottom_margin = annotation_padding * 2.5
+    top_margin = 1.0 - (annotation_padding * 0.3)
+    
+    plt.tight_layout(rect=[left_margin, bottom_margin, right_margin, top_margin])
+    fig.set_constrained_layout(True)
+    
+    return fig
+
 def main():
     st.markdown('<h1 class="main-header">🔥 Thermodynamic Enthalpy Analyzer Pro</h1>', unsafe_allow_html=True)
     st.markdown("### Comprehensive tool for thermodynamic calculations, curve fitting, and multi-material comparison")
@@ -1014,11 +1003,6 @@ def main():
         st.session_state.analyzer = EnthalpyAnalyzer()
     
     analyzer = st.session_state.analyzer
-    
-    # Initialize session state for composition synchronization
-    if 'composition_initialized' not in st.session_state:
-        st.session_state.composition_initialized = False
-        st.session_state.comp_sync_warning = ""
     
     # Create tabs with enhanced icons
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
@@ -1112,7 +1096,7 @@ def main():
                 st.info("👈 Please select or upload a TDB file to continue")
                 st.stop()
         
-        # Composition settings - ENHANCED VERSION WITH SYNCED SLIDERS
+        # Composition settings
         st.markdown("---")
         st.subheader("⚙️ Calculation Settings")
         
@@ -1135,7 +1119,7 @@ def main():
                 st.warning("⚠️ Please select at least one element")
                 st.stop()
             
-            # ENHANCED composition input with synchronized sliders
+            # ENHANCED composition input with synchronized sliders and inputs
             st.markdown("**Composition Input:**")
             fraction_type = st.radio(
                 "Fraction type:",
@@ -1144,83 +1128,84 @@ def main():
                 key="comp_type_tab1"
             )
             
+            # Initialize session state for composition if not present
+            comp_key = f"composition_{fraction_type}_{'_'.join(sorted(selected_elements))}"
+            if comp_key not in st.session_state:
+                st.session_state[comp_key] = {}
+                # Set defaults - first element gets 0.33, others 0.0
+                for i, element in enumerate(selected_elements):
+                    st.session_state[comp_key][element] = 0.33 if i == 0 else 0.0
+            
             composition = {}
             remaining = 1.0
             
-            # Display sync status
-            if not st.session_state.composition_initialized:
-                st.session_state.comp_sync_warning = "🔄 Sliders and number inputs are now synchronized!"
-                st.session_state.composition_initialized = True
+            # Callback functions for synchronization
+            def update_slider_from_input(element):
+                slider_key = f"slider_{element}"
+                input_key = f"input_{element}"
+                if input_key in st.session_state:
+                    st.session_state[slider_key] = st.session_state[input_key]
+                    st.session_state[comp_key][element] = st.session_state[input_key]
             
-            if st.session_state.comp_sync_warning:
-                st.markdown(f'<div class="comp-sync-box">{st.session_state.comp_sync_warning}</div>', unsafe_allow_html=True)
+            def update_input_from_slider(element):
+                slider_key = f"slider_{element}"
+                input_key = f"input_{element}"
+                if slider_key in st.session_state:
+                    st.session_state[input_key] = st.session_state[slider_key]
+                    st.session_state[comp_key][element] = st.session_state[slider_key]
             
+            # Create composition controls for n-1 elements
             for i, element in enumerate(selected_elements[:-1]):
-                # Initialize session state for this element if not exists
-                slider_key = f"comp_slider_{element}"
-                num_key = f"comp_num_{element}"
-                
-                if slider_key not in st.session_state:
-                    # Set initial values based on position
-                    if i == 0:
-                        st.session_state[slider_key] = 0.33
-                    else:
-                        st.session_state[slider_key] = 0.0
-                
-                if num_key not in st.session_state:
-                    st.session_state[num_key] = st.session_state[slider_key]
-                
                 col1, col2 = st.columns([3, 1])
                 
+                # Get current value from session state
+                current_value = st.session_state[comp_key].get(element, 0.33 if i == 0 else 0.0)
+                
                 with col1:
-                    # Slider with callback to sync to number input
+                    # Slider with callback to update input
                     slider_value = st.slider(
                         f"{element} {fraction_type}",
                         0.0, 1.0,
-                        st.session_state[slider_key],
+                        current_value,
                         0.01,
-                        key=f"{slider_key}_widget",
-                        on_change=sync_composition_slider,
+                        key=f"slider_{element}",
+                        on_change=update_input_from_slider,
                         args=(element,),
-                        help="Adjust slider - value will sync with number input"
+                        help=f"Adjust {element} composition"
                     )
-                    # Store the value in session state
-                    st.session_state[slider_key] = slider_value
                 
                 with col2:
-                    # Number input with callback to sync to slider
-                    num_value = st.number_input(
+                    # Number input with callback to update slider
+                    input_value = st.number_input(
                         f"Value",
                         0.0, 1.0,
-                        st.session_state[num_key],
+                        current_value,
                         0.01,
-                        key=f"{num_key}_widget",
-                        on_change=sync_composition_number,
+                        key=f"input_{element}",
+                        on_change=update_slider_from_input,
                         args=(element,),
-                        help="Enter value directly - slider will update automatically"
+                        label_visibility="collapsed"
                     )
-                    # Store the value in session state
-                    st.session_state[num_key] = num_value
                 
-                # Use the synchronized value (both should be the same)
-                current_value = st.session_state[slider_key]
-                composition[element] = current_value
-                remaining -= current_value
+                # Update composition with the synchronized value
+                composition[element] = st.session_state[comp_key].get(element, slider_value)
+                remaining -= composition[element]
             
             # Last element (auto-calculated)
             last_element = selected_elements[-1]
             composition[last_element] = max(0.0, min(1.0, remaining))
+            st.session_state[comp_key][last_element] = composition[last_element]
             
-            # Calculate sum and check validity
+            # Display composition summary
             total_sum = sum(composition.values())
-            sum_status = "✅ Sum = 1.0" if abs(total_sum - 1.0) < 0.001 else "⚠️ Sum ≠ 1.0"
+            status_icon = "✅" if abs(total_sum - 1.0) < 0.001 else "⚠️"
+            status_color = "green" if abs(total_sum - 1.0) < 0.001 else "orange"
             
             st.markdown(f"""
             <div class="info-box">
             <strong>Auto-calculated:</strong> {last_element} {fraction_type} = {composition[last_element]:.4f}
             <br><strong>Total:</strong> {total_sum:.4f}
-            <br><strong>Status:</strong> {sum_status}
-            <br><small><em>Sliders and number inputs are synchronized. Changing one updates the other.</em></small>
+            <br><strong style="color:{status_color};">{status_icon} Sum = {total_sum:.4f}</strong>
             </div>
             """, unsafe_allow_html=True)
             
@@ -1352,7 +1337,16 @@ def main():
                         })
                     
                     st.success(f"✅ Calculation completed! Generated {len(result_df)} data points.")
-                    st.pyplot(fig)
+                    
+                    # Option for interactive Plotly plot
+                    use_plotly = st.checkbox("📊 Show interactive plot (Plotly)", value=False)
+                    if use_plotly:
+                        plotly_fig = create_interactive_plotly_visualization(
+                            result_df, composition_mole, material_name
+                        )
+                        st.plotly_chart(plotly_fig, use_container_width=True)
+                    else:
+                        st.pyplot(fig)
                     
                     # Display key metrics
                     col_m1, col_m2, col_m3, col_m4 = st.columns(4)
@@ -1365,64 +1359,98 @@ def main():
                     with col_m4:
                         st.metric("Data Points", len(result_df))
                     
-                    # ENHANCED Download section with column selection
+                    # ENHANCED Download section with column customization
                     st.markdown('<div class="download-section">', unsafe_allow_html=True)
                     st.subheader("📥 Download Results")
                     
-                    # NEW: Column selection for downloads
-                    st.markdown("**Select columns to include:**")
+                    # Column selection for downloads
+                    st.markdown('<div class="column-selector">', unsafe_allow_html=True)
+                    st.markdown("**📋 Select columns to include in downloads:**")
+                    
                     col_sel1, col_sel2 = st.columns(2)
                     
+                    # Initialize session state for column selections
+                    if 'csv_columns' not in st.session_state:
+                        st.session_state.csv_columns = ['Temperature_K', 'Enthalpy_J_mol', 'Enthalpy_J_kg']
+                    if 'dat_columns' not in st.session_state:
+                        st.session_state.dat_columns = ['Temperature_K', 'Enthalpy_J_mol', 'Enthalpy_J_kg']
+                    
                     with col_sel1:
-                        # For CSV download
-                        csv_columns = st.multiselect(
-                            "CSV Download Columns:",
+                        st.markdown("**CSV Download Columns:**")
+                        csv_cols = st.multiselect(
+                            "CSV columns:",
                             options=['Temperature_K', 'Enthalpy_J_mol', 'Enthalpy_J_kg'],
-                            default=['Temperature_K', 'Enthalpy_J_mol', 'Enthalpy_J_kg'],
-                            key="csv_columns"
+                            default=st.session_state.csv_columns,
+                            key="csv_columns_select",
+                            label_visibility="collapsed"
                         )
                         
                         # Preset buttons for common combinations
+                        st.markdown("**Quick presets:**")
                         col_p1, col_p2, col_p3 = st.columns(3)
                         with col_p1:
-                            if st.button("T, H", key="preset1"):
+                            if st.button("T+H", key="preset_th", help="Temperature + Molar Enthalpy"):
                                 st.session_state.csv_columns = ['Temperature_K', 'Enthalpy_J_mol']
                                 st.rerun()
                         with col_p2:
-                            if st.button("T, h", key="preset2"):
+                            if st.button("T+h", key="preset_tk", help="Temperature + Specific Enthalpy"):
                                 st.session_state.csv_columns = ['Temperature_K', 'Enthalpy_J_kg']
                                 st.rerun()
                         with col_p3:
-                            if st.button("All", key="preset3"):
+                            if st.button("All", key="preset_all", help="All columns"):
                                 st.session_state.csv_columns = ['Temperature_K', 'Enthalpy_J_mol', 'Enthalpy_J_kg']
                                 st.rerun()
                     
                     with col_sel2:
-                        # For DAT download
-                        dat_columns = st.multiselect(
-                            "DAT Download Columns:",
+                        st.markdown("**DAT Download Columns:**")
+                        dat_cols = st.multiselect(
+                            "DAT columns:",
                             options=['Temperature_K', 'Enthalpy_J_mol', 'Enthalpy_J_kg'],
-                            default=['Temperature_K', 'Enthalpy_J_mol', 'Enthalpy_J_kg'],
-                            key="dat_columns"
+                            default=st.session_state.dat_columns,
+                            key="dat_columns_select",
+                            label_visibility="collapsed"
                         )
+                        
+                        # Preset buttons for DAT
+                        st.markdown("**Quick presets:**")
+                        col_d1, col_d2, col_d3 = st.columns(3)
+                        with col_d1:
+                            if st.button("T+H", key="preset_th_dat"):
+                                st.session_state.dat_columns = ['Temperature_K', 'Enthalpy_J_mol']
+                                st.rerun()
+                        with col_d2:
+                            if st.button("T+h", key="preset_tk_dat"):
+                                st.session_state.dat_columns = ['Temperature_K', 'Enthalpy_J_kg']
+                                st.rerun()
+                        with col_d3:
+                            if st.button("All", key="preset_all_dat"):
+                                st.session_state.dat_columns = ['Temperature_K', 'Enthalpy_J_mol', 'Enthalpy_J_kg']
+                                st.rerun()
+                    
+                    st.markdown('</div>', unsafe_allow_html=True)
                     
                     col_dl1, col_dl2 = st.columns(2)
                     
                     with col_dl1:
                         # Filter dataframe based on selected columns
-                        csv_df = result_df[csv_columns].copy()
-                        csv_full = csv_df.to_csv(index=False)
-                        
-                        # Generate filename based on columns
-                        col_suffix = "_".join([c.split('_')[0] for c in csv_columns])
-                        st.download_button(
-                            f"📄 Download CSV ({col_suffix})",
-                            data=csv_full,
-                            file_name=f"enthalpy_{material_name.replace(' ', '_')}_{col_suffix}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                            mime="text/csv"
-                        )
+                        if not csv_cols:
+                            st.warning("Select at least one column for CSV download")
+                        else:
+                            csv_df = result_df[csv_cols].copy()
+                            csv_full = csv_df.to_csv(index=False)
+                            
+                            # Generate filename based on columns
+                            col_suffix = "_".join([c.split('_')[0] for c in csv_cols])
+                            st.download_button(
+                                f"📄 Download CSV ({col_suffix})",
+                                data=csv_full,
+                                file_name=f"enthalpy_{material_name.replace(' ', '_')}_{col_suffix}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                                mime="text/csv",
+                                use_container_width=True
+                            )
                     
                     with col_dl2:
+                        # Prepare metadata
                         metadata = {
                             'TDB File': os.path.basename(tdb_path),
                             'Phases': ', '.join(selected_phases),
@@ -1430,21 +1458,25 @@ def main():
                             'Temperature Range': f"{T_start}-{T_end} K",
                             'Output Quantity': output_key,
                             'Composition Type': fraction_type,
-                            'Columns': ', '.join(dat_columns)
+                            'Columns': ', '.join(dat_cols)
                         }
                         
                         # Filter dataframe for DAT
-                        dat_df = result_df[dat_columns].copy()
-                        dat_content = analyzer.format_dat_file(dat_df, composition_mole, metadata)
-                        
-                        # Generate filename
-                        dat_suffix = "_".join([c.split('_')[0] for c in dat_columns])
-                        st.download_button(
-                            f"📄 Download DAT ({dat_suffix})",
-                            data=dat_content,
-                            file_name=f"enthalpy_{material_name.replace(' ', '_')}_{dat_suffix}_{datetime.now().strftime('%Y%m%d_%H%M')}.dat",
-                            mime="text/plain"
-                        )
+                        if not dat_cols:
+                            st.warning("Select at least one column for DAT download")
+                        else:
+                            dat_df = result_df[dat_cols].copy()
+                            dat_content = analyzer.format_dat_file(dat_df, composition_mole, metadata, dat_cols)
+                            
+                            # Generate filename
+                            dat_suffix = "_".join([c.split('_')[0] for c in dat_cols])
+                            st.download_button(
+                                f"📄 Download DAT ({dat_suffix})",
+                                data=dat_content,
+                                file_name=f"enthalpy_{material_name.replace(' ', '_')}_{dat_suffix}_{datetime.now().strftime('%Y%m%d_%H%M')}.dat",
+                                mime="text/plain",
+                                use_container_width=True
+                            )
                     
                     st.markdown('</div>', unsafe_allow_html=True)
                     
@@ -1572,19 +1604,13 @@ def main():
                     cols = st.columns(len(elements))
                     for idx, element in enumerate(elements):
                         with cols[idx]:
-                            # Initialize session state for manual composition
-                            man_key = f"manual_comp_{element}"
-                            if man_key not in st.session_state:
-                                st.session_state[man_key] = 1.0/len(elements) if idx < len(elements)-1 else 0.0
-                            
                             fraction = st.number_input(
                                 f"{element}",
                                 0.0, 1.0, 
-                                st.session_state[man_key],
+                                1.0/len(elements) if idx < len(elements)-1 else 0.0,
                                 0.01,
-                                key=f"{man_key}_widget"
+                                key=f"manual_comp_{element}"
                             )
-                            st.session_state[man_key] = fraction
                             composition_for_fitting[element] = fraction
                     
                     # Calculate last element
@@ -1713,7 +1739,7 @@ def main():
                         'composition': composition_for_fitting,
                         'composition_type': composition_type_for_fitting,
                         'temperature_range': [float(T_data.min()), float(T_data.max())],
-                        'timestamp': datetime.now().strftime("%Y-%m-d %H:%M:%S")
+                        'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     }
                     analyzer.fitting_results.append(fit_result)
                     
@@ -1746,9 +1772,21 @@ def main():
                         {DeltaHf_fit:,.0f} \cdot \frac{{1}}{{1 + e^{{-{k_fit:.6f}(T - {Tm_fit:.2f})}}}} + {H298_fit:,.0f}\right]
                         """)
                     
-                    # Download section
+                    # Enhanced Download section
                     st.markdown('<div class="download-section">', unsafe_allow_html=True)
                     st.subheader("📥 Download Fitting Results")
+                    
+                    # Column selection for fitted data
+                    st.markdown('<div class="column-selector">', unsafe_allow_html=True)
+                    st.markdown("**📋 Select columns for fitted curve download:**")
+                    
+                    fit_cols = st.multiselect(
+                        "Fitted curve columns:",
+                        options=['Temperature_K', 'Enthalpy_Fitted_J_mol', 'Enthalpy_Fitted_J_kg'],
+                        default=['Temperature_K', 'Enthalpy_Fitted_J_mol', 'Enthalpy_Fitted_J_kg'],
+                        key="fit_columns"
+                    )
+                    st.markdown('</div>', unsafe_allow_html=True)
                     
                     col_f1, col_f2, col_f3 = st.columns(3)
                     
@@ -1772,22 +1810,32 @@ def main():
                             "📄 Coefficients (CSV)",
                             data=coeff_df.to_csv(index=False),
                             file_name=f"fitting_coeffs_{material_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                            mime="text/csv"
+                            mime="text/csv",
+                            use_container_width=True
                         )
                     
                     with col_f2:
-                        fitted_df = pd.DataFrame({
-                            'Temperature_K': T_fit,
-                            'Enthalpy_Fitted_J_mol': H_fit,
-                            'Enthalpy_Fitted_J_kg': analyzer.specific_enthalpy_equation(T_fit, *fit_params, molar_weight)
-                        })
-                        
-                        st.download_button(
-                            "📄 Fitted Curve (CSV)",
-                            data=fitted_df.to_csv(index=False),
-                            file_name=f"fitted_curve_{material_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                            mime="text/csv"
-                        )
+                        if not fit_cols:
+                            st.warning("Select columns for fitted curve")
+                        else:
+                            fitted_df = pd.DataFrame({
+                                'Temperature_K': T_fit,
+                                'Enthalpy_Fitted_J_mol': H_fit,
+                                'Enthalpy_Fitted_J_kg': analyzer.specific_enthalpy_equation(T_fit, *fit_params, molar_weight)
+                            })
+                            
+                            # Filter selected columns
+                            fitted_df = fitted_df[fit_cols]
+                            fitted_csv = fitted_df.to_csv(index=False)
+                            
+                            col_suffix = "_".join([c.split('_')[0] for c in fit_cols])
+                            st.download_button(
+                                "📄 Fitted Curve (CSV)",
+                                data=fitted_csv,
+                                file_name=f"fitted_curve_{material_name.replace(' ', '_')}_{col_suffix}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                                mime="text/csv",
+                                use_container_width=True
+                            )
                     
                     with col_f3:
                         json_data = json.dumps(fit_result, indent=4)
@@ -1795,7 +1843,8 @@ def main():
                             "📄 Full Results (JSON)",
                             data=json_data,
                             file_name=f"fitting_results_{material_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
-                            mime="application/json"
+                            mime="application/json",
+                            use_container_width=True
                         )
                     
                     st.markdown('</div>', unsafe_allow_html=True)
@@ -1917,36 +1966,63 @@ def main():
         summary_df = pd.DataFrame(summary_data)
         st.dataframe(summary_df, use_container_width=True, hide_index=True)
         
-        # Download options
+        # Enhanced Download options with column customization
         st.markdown('<div class="download-section">', unsafe_allow_html=True)
         st.subheader("📥 Download Comparison Data")
+        
+        # Column selection for combined data
+        st.markdown('<div class="column-selector">', unsafe_allow_html=True)
+        st.markdown("**📋 Select columns for combined download:**")
+        
+        combined_cols = st.multiselect(
+            "Columns to include:",
+            options=['Temperature_K', 'Enthalpy_J_mol', 'Enthalpy_J_kg'],
+            default=['Temperature_K', 'Enthalpy_J_mol', 'Enthalpy_J_kg'],
+            key="combined_columns"
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
         
         col_c1, col_c2 = st.columns(2)
         
         with col_c1:
-            combined_data = {'Temperature_K': analyzer.results_history[selected_indices[0]]['data']['Temperature_K'].values}
-            
-            for idx in selected_indices:
-                res = analyzer.results_history[idx]
-                name_clean = res['name'].replace(' ', '_').replace('-', '_')
-                combined_data[f"{name_clean}_H_molar"] = res['data']['Enthalpy_J_mol'].values
-                combined_data[f"{name_clean}_H_specific"] = res['data']['Enthalpy_J_kg'].values
-            
-            combined_df = pd.DataFrame(combined_data)
-            
-            st.download_button(
-                "📄 Combined Data (CSV)",
-                data=combined_df.to_csv(index=False),
-                file_name=f"multi_material_comparison_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                mime="text/csv"
-            )
+            if not combined_cols:
+                st.warning("Select columns for combined download")
+            else:
+                # Create combined dataframe
+                combined_data = {}
+                
+                # Add temperature from first material
+                if 'Temperature_K' in combined_cols:
+                    combined_data['Temperature_K'] = analyzer.results_history[selected_indices[0]]['data']['Temperature_K'].values
+                
+                for idx in selected_indices:
+                    res = analyzer.results_history[idx]
+                    name_clean = res['name'].replace(' ', '_').replace('-', '_')
+                    
+                    if 'Enthalpy_J_mol' in combined_cols:
+                        combined_data[f"{name_clean}_H_molar"] = res['data']['Enthalpy_J_mol'].values
+                    
+                    if 'Enthalpy_J_kg' in combined_cols:
+                        combined_data[f"{name_clean}_H_specific"] = res['data']['Enthalpy_J_kg'].values
+                
+                combined_df = pd.DataFrame(combined_data)
+                
+                col_suffix = "_".join([c.split('_')[0] for c in combined_cols])
+                st.download_button(
+                    "📄 Combined Data (CSV)",
+                    data=combined_df.to_csv(index=False),
+                    file_name=f"multi_material_comparison_{col_suffix}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
         
         with col_c2:
             st.download_button(
                 "📄 Summary Table (CSV)",
                 data=summary_df.to_csv(index=False),
                 file_name=f"comparison_summary_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                mime="text/csv"
+                mime="text/csv",
+                use_container_width=True
             )
         
         st.markdown('</div>', unsafe_allow_html=True)
@@ -1984,12 +2060,6 @@ def main():
                 0.0, 1.0, 0.3, 0.05,
                 help="Transparency of grid lines"
             )
-            
-            analyzer.plot_customizations['subplot_spacing'] = st.slider(
-                "Subplot Spacing",
-                0.1, 1.0, 0.3, 0.05,
-                help="Spacing between subplots"
-            )
         
         with col_cust2:
             st.subheader("📝 Text & Legend Settings")
@@ -2019,18 +2089,12 @@ def main():
                  'upper center', 'center'],
                 help="Position of the legend"
             )
-            
-            analyzer.plot_customizations['legend_padding'] = st.slider(
-                "Legend Padding",
-                0.0, 0.1, 0.01, 0.005,
-                help="Padding around legend"
-            )
         
-        # Figure size and padding settings
+        # NEW: Figure size and annotation settings
         st.markdown("---")
-        st.subheader("📐 Figure Size & Padding Settings")
+        st.subheader("📐 Figure Size & Annotation Settings")
         
-        col_fig1, col_fig2, col_fig3, col_fig4 = st.columns(4)
+        col_fig1, col_fig2, col_fig3, col_fig4, col_fig5 = st.columns(5)
         
         with col_fig1:
             analyzer.plot_customizations['figure_width'] = st.slider(
@@ -2060,29 +2124,11 @@ def main():
                 help="Size of axis labels"
             )
         
-        # Advanced padding controls
-        st.markdown("#### 🔧 Advanced Padding Controls")
-        col_pad1, col_pad2, col_pad3 = st.columns(3)
-        
-        with col_pad1:
-            analyzer.plot_customizations['title_padding'] = st.slider(
-                "Title Padding",
-                10, 30, 20, 1,
-                help="Padding for plot titles"
-            )
-        
-        with col_pad2:
-            analyzer.plot_customizations['label_padding'] = st.slider(
-                "Label Padding",
-                5, 20, 15, 1,
-                help="Padding for axis labels"
-            )
-        
-        with col_pad3:
-            analyzer.plot_customizations['tick_padding'] = st.slider(
-                "Tick Padding",
-                5, 15, 10, 1,
-                help="Padding for tick labels"
+        with col_fig5:
+            analyzer.plot_customizations['annotation_padding'] = st.slider(
+                "Annotation Padding",
+                0.01, 0.15, 0.05, 0.01,
+                help="Padding around annotations to prevent overlap"
             )
         
         # Colormap selection
@@ -2108,15 +2154,8 @@ def main():
             ax_cmap.set_title(f"Preview: {analyzer.plot_customizations['colormap']}", fontsize=10)
             st.pyplot(fig_cmap)
         
-        # Preview current settings
-        st.markdown("---")
-        st.subheader("👁️ Preview Current Settings")
-        
-        # Display current settings as JSON
-        with st.expander("View Current Customization Settings", expanded=False):
-            st.json(analyzer.plot_customizations)
-        
         # Save and reset buttons
+        st.markdown("---")
         col_save1, col_save2, col_save3 = st.columns(3)
         
         with col_save1:
@@ -2140,11 +2179,7 @@ def main():
                     'figure_height': 10,
                     'tick_size': 11,
                     'label_fontsize': 12,
-                    'legend_padding': 0.01,
-                    'title_padding': 20,
-                    'label_padding': 15,
-                    'tick_padding': 10,
-                    'subplot_spacing': 0.3
+                    'annotation_padding': 0.05
                 }
                 st.success("✅ Customizations reset to defaults!")
                 st.rerun()
@@ -2167,7 +2202,8 @@ def main():
                 "📄 Export Settings (JSON)",
                 data=json_custom,
                 file_name=f"plot_customizations_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
-                mime="application/json"
+                mime="application/json",
+                use_container_width=True
             )
         
         with col_exp2:
@@ -2278,6 +2314,10 @@ def main():
                     analyzer.results_history = []
                     analyzer.fitting_results = []
                     analyzer.history_thumbnails = []
+                    # Clear composition session states
+                    for key in list(st.session_state.keys()):
+                        if key.startswith('composition_') or key.startswith('slider_') or key.startswith('input_'):
+                            del st.session_state[key]
                     st.success("✅ All session data cleared!")
                     st.rerun()
             
@@ -2293,7 +2333,8 @@ def main():
                         "📥 Download Session",
                         data=json_data,
                         file_name=f"enthalpy_analyzer_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                        mime="application/json"
+                        mime="application/json",
+                        use_container_width=True
                     )
             
             # Database management
@@ -2374,7 +2415,7 @@ def main():
             - pycalphad, scipy, xarray
             - matplotlib, plotly, streamlit
             
-           
+            © 2026 Thermodynamic Analysis Toolkit
             """)
     
     # Footer
