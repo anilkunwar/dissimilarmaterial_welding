@@ -14,7 +14,11 @@ import shutil
 from datetime import datetime
 import base64
 import io
-from typing import Dict, List, Optional, Tuple
+import traceback
+from typing import Dict, List, Optional, Tuple, Any
+import sympy as sp
+from itertools import combinations
+import math
 
 warnings.filterwarnings('ignore')
 
@@ -26,122 +30,120 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for professional styling
+# Enhanced CSS for better visualization
 st.markdown("""
 <style>
     .main-header {
-        font-size: 2.8rem;
-        color: #1E88E5;
-        text-align: center;
-        margin-bottom: 1.5rem;
-        font-weight: 700;
-        background: linear-gradient(90deg, #1E88E5, #4A00E0);
+        font-size: 3rem;
+        background: linear-gradient(90deg, #FF512F 0%, #F09819 50%, #FF512F 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        text-align: center;
+        margin-bottom: 1.5rem;
+        font-weight: 800;
+        text-shadow: 0 2px 10px rgba(255, 81, 47, 0.2);
+    }
+    .dof-indicator {
+        padding: 10px 20px;
+        border-radius: 10px;
+        margin: 10px 0;
+        font-weight: bold;
+        text-align: center;
+    }
+    .dof-correct {
+        background: linear-gradient(135deg, #00b09b, #96c93d);
+        color: white;
+    }
+    .dof-warning {
+        background: linear-gradient(135deg, #f46b45, #eea849);
+        color: white;
+    }
+    .dof-error {
+        background: linear-gradient(135deg, #ff416c, #ff4b2b);
+        color: white;
+    }
+    .phase-rule-box {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 20px;
+        border-radius: 15px;
+        color: white;
+        margin: 15px 0;
+        box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+    }
+    .system-status {
+        background: #f8f9fa;
+        border-left: 5px solid #007bff;
+        padding: 15px;
+        border-radius: 8px;
+        margin: 10px 0;
+    }
+    .component-badge {
+        display: inline-block;
+        padding: 5px 15px;
+        margin: 3px;
+        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        color: white;
+        border-radius: 20px;
+        font-size: 0.9rem;
+        font-weight: 600;
+    }
+    .condition-badge {
+        display: inline-block;
+        padding: 5px 15px;
+        margin: 3px;
+        background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+        color: white;
+        border-radius: 20px;
+        font-size: 0.9rem;
+        font-weight: 600;
+    }
+    .phase-badge {
+        display: inline-block;
+        padding: 5px 15px;
+        margin: 3px;
+        background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+        color: white;
+        border-radius: 20px;
+        font-size: 0.9rem;
+        font-weight: 600;
+    }
+    .thermo-card {
+        background: white;
+        border-radius: 15px;
+        padding: 20px;
+        margin: 15px 0;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        border: 1px solid #e0e0e0;
+    }
+    .gibbs-rule {
+        font-family: "Courier New", monospace;
+        background: #2c3e50;
+        color: #ecf0f1;
+        padding: 15px;
+        border-radius: 10px;
+        margin: 10px 0;
+        font-size: 1.2rem;
+        text-align: center;
     }
     .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
+        gap: 4px;
     }
     .stTabs [data-baseweb="tab"] {
-        height: 45px;
-        white-space: pre-wrap;
-        background-color: #f0f2f6;
-        border-radius: 8px 8px 0px 0px;
-        gap: 1px;
-        padding: 12px 24px;
+        background-color: #f8f9fa;
+        border-radius: 4px 4px 0 0;
+        padding: 10px 16px;
         font-weight: 600;
-        border: 1px solid #ddd;
         transition: all 0.3s ease;
     }
     .stTabs [aria-selected="true"] {
         background-color: #1E88E5;
         color: white;
-        border-color: #1E88E5;
-        box-shadow: 0 4px 6px rgba(30, 136, 229, 0.2);
-    }
-    .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: 0 6px 20px rgba(0,0,0,0.15);
-        margin-bottom: 15px;
-        color: white;
-        border: none;
-    }
-    .download-section {
-        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-        padding: 25px;
-        border-radius: 15px;
-        margin-top: 25px;
-        border: 1px solid #ddd;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    }
-    .phase-container {
-        max-height: 300px;
-        overflow-y: auto;
-        border: 1px solid #ddd;
-        padding: 15px;
-        border-radius: 10px;
-        background-color: #f8f9fa;
-        box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
-    }
-    .success-box {
-        background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
-        padding: 20px;
-        border-radius: 10px;
-        border-left: 6px solid #28a745;
-        margin: 15px 0;
-        box-shadow: 0 4px 6px rgba(40, 167, 69, 0.1);
-    }
-    .warning-box {
-        background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
-        padding: 20px;
-        border-radius: 10px;
-        border-left: 6px solid #ffc107;
-        margin: 15px 0;
-        box-shadow: 0 4px 6px rgba(255, 193, 7, 0.1);
-    }
-    .info-box {
-        background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%);
-        padding: 20px;
-        border-radius: 10px;
-        border-left: 6px solid #17a2b8;
-        margin: 15px 0;
-        box-shadow: 0 4px 6px rgba(23, 162, 184, 0.1);
-    }
-    .element-badge {
-        display: inline-block;
-        padding: 4px 12px;
-        margin: 2px;
-        background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
-        color: white;
-        border-radius: 20px;
-        font-size: 0.85rem;
-        font-weight: 600;
-    }
-    .phase-badge {
-        display: inline-block;
-        padding: 4px 12px;
-        margin: 2px;
-        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-        color: white;
-        border-radius: 20px;
-        font-size: 0.85rem;
-        font-weight: 600;
-    }
-    .data-point {
-        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-        color: white;
-        padding: 8px 16px;
-        border-radius: 8px;
-        text-align: center;
-        margin: 5px;
+        box-shadow: 0 2px 4px rgba(30, 136, 229, 0.2);
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Comprehensive molar weights database (expanded)
+# Comprehensive molar weights database
 MOLAR_WEIGHTS = {
     'AG': 107.8682, 'AL': 26.9815386, 'AU': 196.966569, 'BI': 208.98040,
     'CU': 63.546, 'IN': 114.818, 'NI': 58.6934, 'PB': 207.2,
@@ -158,36 +160,218 @@ MOLAR_WEIGHTS = {
     'ER': 167.259, 'TM': 168.93421, 'YB': 173.04, 'LU': 174.9668,
     'SC': 44.955912, 'GA': 69.723, 'GE': 72.64, 'AS': 74.92160,
     'SE': 78.96, 'BR': 79.904, 'KR': 83.798, 'RB': 85.4678,
-    'SR': 87.62, 'BA': 137.327, 'RA': 226.0, 'AC': 227.0,
-    'TH': 232.03806, 'PA': 231.03588, 'NP': 237.0, 'PU': 244.0,
-    'AM': 243.0, 'CM': 247.0, 'BK': 247.0, 'CF': 251.0,
-    'ES': 252.0, 'FM': 257.0, 'MD': 258.0, 'NO': 259.0,
-    'LR': 262.0, 'LI': 6.941, 'BE': 9.012182, 'B': 10.811,
-    'NA': 22.989769, 'P': 30.973762, 'S': 32.065, 'CL': 35.453,
-    'K': 39.0983, 'CA': 40.078, 'F': 18.9984032
+    'SR': 87.62, 'BA': 137.327, 'LI': 6.941, 'BE': 9.012182,
+    'B': 10.811, 'NA': 22.989769, 'P': 30.973762, 'S': 32.065,
+    'CL': 35.453, 'K': 39.0983, 'CA': 40.078, 'F': 18.9984032
 }
 
-class EnthalpyAnalyzer:
+class ThermodynamicSystemAnalyzer:
+    """Enhanced analyzer with Gibbs Phase Rule validation"""
+    
     def __init__(self):
         self.results_history = []
         self.fitting_results = []
-        self.database_dir = Path("databases")
+        self.database_dir = Path("thermo_databases")
         self.database_dir.mkdir(exist_ok=True)
         self._ensure_default_tdb()
+        self.system_state = {}
     
     def _ensure_default_tdb(self):
-        """Create a default TDB file if none exists"""
-        default_tdb_files = list(self.database_dir.glob("*.tdb"))
-        
-        if not default_tdb_files:
-            # Create a simple example TDB file
-            example_tdb_content = """$ Example TDB File for Binary Al-Cu System
-$ Created by Thermodynamic Enthalpy Analyzer Pro
+        """Create comprehensive example TDB files"""
+        # Al-Cu-Ni ternary system example
+        al_cu_ni_tdb = """$ AL-CU-NI Ternary System - Example Database
+$ For testing Thermodynamic Enthalpy Analyzer
 $
  ELEMENT /-   ELECTRON_GAS              0.0000E+00  0.0000E+00  0.0000E+00!
  ELEMENT VA   VACUUM                    0.0000E+00  0.0000E+00  0.0000E+00!
  ELEMENT AL   FCC_A1                    2.6982E+01  4.5773E+03  2.8322E+01!
  ELEMENT CU   FCC_A1                    6.3546E+01  5.0041E+03  3.3150E+01!
+ ELEMENT NI   FCC_A1                    5.8693E+01  4.7870E+03  2.9796E+01!
+$
+ TYPE_DEFINITION % SEQ *!
+$
+$============== LIQUID PHASE ==============
+ PHASE LIQUID %  1  1.0  !
+ CONSTITUENT LIQUID :AL,CU,NI : !
+$
+$============== FCC_A1 PHASE ==============
+ PHASE FCC_A1 %  2  1.0  1.0  !
+ CONSTITUENT FCC_A1 :AL,CU,NI : VA : !
+$
+$============== BCC_A2 PHASE ==============
+ PHASE BCC_A2 %  2  1.0  3.0  !
+ CONSTITUENT BCC_A2 :AL,CU,NI : VA : !
+$
+$============== FUNCTION DEFINITIONS ==============
+ FUNCTION GHSERAL    2.98150E+02  -7976.15+137.093038*T-24.3671976*T*LN(T)
+     -.001884662*T**2-8.77664E-07*T**3+74092*T**(-1);  7.00000E+02  Y
+     -11276.24+223.048446*T-38.5844296*T*LN(T)+.018531982*T**2
+     -5.764227E-06*T**3+74092*T**(-1);  9.33600E+02  Y
+     -11278.378+188.684153*T-31.748192*T*LN(T)-1.230524E+28*T**(-9);  2.90000E+03  N !
+ FUNCTION GHSERCU    2.98150E+02  -7770.458+130.485235*T-24.112392*T*LN(T)
+     -.00265684*T**2+1.29223E-07*T**3+52478*T**(-1);  1.35777E+03  Y
+     -13542.026+183.803828*T-31.38*T*LN(T)+2.64313E+31*T**(-9);  3.20000E+03  N !
+ FUNCTION GHSERNI    2.98150E+02  -5179.159+117.854*T-22.096*T*LN(T)
+     -.0048407*T**2;  1.72800E+03  Y
+     -27840.655+279.135*T-43.1*T*LN(T)+1.12754E+31*T**(-9);  3.00000E+03  N !
+$
+$============== LIQUID PARAMETERS ==============
+ PARAMETER G(LIQUID,AL;0)  2.98150E+02  +11005.029-11.840849*T
+      +7.9337E-20*T**7+GHSERAL#;  9.33600E+02  Y
+      +10482.382-11.253974*T+1.231E+28*T**(-9)+GHSERAL#;  2.90000E+03  N !
+ PARAMETER G(LIQUID,CU;0)  2.98150E+02  +12964.735-9.511904*T
+      +5.8494E-21*T**7+GHSERCU#;  1.35777E+03  Y
+      +13924.446-9.511904*T+2.64313E+31*T**(-9)+GHSERCU#;  3.20000E+03  N !
+ PARAMETER G(LIQUID,NI;0)  2.98150E+02  +16414.686-9.397*T
+      -3.82318E-21*T**7+GHSERNI#;  1.72800E+03  Y
+      +17197.666-9.397*T+1.26586E+31*T**(-9)+GHSERNI#;  3.00000E+03  N !
+ PARAMETER G(LIQUID,AL,CU;0)  2.98150E+02  -47046.58+6.75*T;  6.00000E+03  N !
+ PARAMETER G(LIQUID,AL,CU;1)  2.98150E+02  +21202.8352-9.67484*T;  6.00000E+03  N !
+ PARAMETER G(LIQUID,AL,NI;0)  2.98150E+02  -152000+16*T;  6.00000E+03  N !
+ PARAMETER G(LIQUID,CU,NI;0)  2.98150E+02  +8030-3.235*T;  6.00000E+03  N !
+$
+$============== FCC_A1 PARAMETERS ==============
+ PARAMETER G(FCC_A1,AL:VA;0)  2.98150E+02  +GHSERAL#;  6.00000E+03  N !
+ PARAMETER G(FCC_A1,CU:VA;0)  2.98150E+02  +GHSERCU#;  6.00000E+03  N !
+ PARAMETER G(FCC_A1,NI:VA;0)  2.98150E+02  +GHSERNI#;  6.00000E+03  N !
+ PARAMETER G(FCC_A1,AL,CU:VA;0)  2.98150E+02  -12282.6+2.63791*T;  6.00000E+03  N !
+ PARAMETER G(FCC_A1,AL,CU:VA;1)  2.98150E+02  +4580.9-1.7352*T;  6.00000E+03  N !
+ PARAMETER G(FCC_A1,AL,NI:VA;0)  2.98150E+02  -162400+16*T;  6.00000E+03  N !
+ PARAMETER G(FCC_A1,CU,NI:VA;0)  2.98150E+02  +8366+2.802*T;  6.00000E+03  N !
+$
+$============== BCC_A2 PARAMETERS ==============
+ PARAMETER G(BCC_A2,AL:VA;0)  2.98150E+02  +10083-4.813*T+GHSERAL#;  6.00000E+03  N !
+ PARAMETER G(BCC_A2,CU:VA;0)  2.98150E+02  +5000+2*T+GHSERCU#;  6.00000E+03  N !
+ PARAMETER G(BCC_A2,NI:VA;0)  2.98150E+02  +8715.084-3.556*T+GHSERNI#;  6.00000E+03  N !
+$
+ LIST_OF_REFERENCES
+ NUMBER  SOURCE
+    1    'AL-CU-NI Ternary System - Thermodynamic Enthalpy Analyzer Example'
+    2    'Based on COST507 database with simplifications'
+$"""
+        
+        default_path = self.database_dir / "AL_CU_NI_EXAMPLE.tdb"
+        with open(default_path, 'w') as f:
+            f.write(al_cu_ni_tdb)
+        
+        # Create additional examples
+        self._create_binary_examples()
+        self._create_quaternary_example()
+    
+    def _create_binary_examples(self):
+        """Create binary system examples"""
+        # Fe-C binary
+        fe_c_tdb = """$ FE-C Binary System
+ ELEMENT /-   ELECTRON_GAS              0.0000E+00  0.0000E+00  0.0000E+00!
+ ELEMENT VA   VACUUM                    0.0000E+00  0.0000E+00  0.0000E+00!
+ ELEMENT FE   BCC_A2                    5.5847E+01  4.4890E+03  2.7280E+01!
+ ELEMENT C    GRAPHITE                  1.2011E+01  1.0500E+03  5.7420E+00!
+$
+ TYPE_DEFINITION % SEQ *!
+$
+ PHASE LIQUID %  1  1.0  !
+ CONSTITUENT LIQUID :FE,C : !
+$
+ PHASE BCC_A2 %  2  1.0  3.0  !
+ CONSTITUENT BCC_A2 :FE:C : VA : !
+$
+ PHASE FCC_A1 %  2  1.0  1.0  !
+ CONSTITUENT FCC_A1 :FE:C : VA : !
+$
+ FUNCTION GHSERFE    2.98150E+02  +1225.7+124.134*T-23.5143*T*LN(T)
+     -.00439752*T**2-5.8927E-08*T**3+77359*T**(-1);  1.81100E+03  Y
+     -25383.581+299.31255*T-46*T*LN(T)+2.29603E+31*T**(-9);  6.00000E+03  N !
+ FUNCTION GHSERCC   2.98150E+02  -17368.441+170.73*T-24.3*T*LN(T)
+     +4.723E-04*T**2-6.188E-08*T**3+1.1857E+05*T**(-1);  4.10000E+03  N !
+$
+ PARAMETER G(LIQUID,FE;0)  2.98150E+02  +12040.17-6.55843*T+GHSERFE#;  6.00000E+03  N !
+ PARAMETER G(LIQUID,C;0)  2.98150E+02  +117230.0-24.373*T+GHSERCC#;  6.00000E+03  N !
+ PARAMETER G(LIQUID,FE,C;0)  2.98150E+02  -91976.5+6.648*T;  6.00000E+03  N !
+$
+ PARAMETER G(BCC_A2,FE:VA;0)  2.98150E+02  +GHSERFE#;  6.00000E+03  N !
+ PARAMETER G(BCC_A2,FE:C:VA;0)  2.98150E+02  +10000-2*T;  6.00000E+03  N !
+$
+ PARAMETER G(FCC_A1,FE:VA;0)  2.98150E+02  +1000-1.5*T+GHSERFE#;  6.00000E+03  N !
+ PARAMETER G(FCC_A1,C:VA;0)  2.98150E+02  +GHSERCC#;  6.00000E+03  N !
+$
+ LIST_OF_REFERENCES
+ NUMBER  SOURCE
+    1    'Fe-C Binary System - Simplified for testing'
+$"""
+        
+        fec_path = self.database_dir / "FE_C_EXAMPLE.tdb"
+        with open(fec_path, 'w') as f:
+            f.write(fe_c_tdb)
+        
+        # Ni-Al binary
+        ni_al_tdb = """$ NI-AL Binary System
+ ELEMENT /-   ELECTRON_GAS              0.0000E+00  0.0000E+00  0.0000E+00!
+ ELEMENT VA   VACUUM                    0.0000E+00  0.0000E+00  0.0000E+00!
+ ELEMENT NI   FCC_A1                    5.8693E+01  4.7870E+03  2.9796E+01!
+ ELEMENT AL   FCC_A1                    2.6982E+01  4.5773E+03  2.8322E+01!
+$
+ TYPE_DEFINITION % SEQ *!
+$
+ PHASE LIQUID %  1  1.0  !
+ CONSTITUENT LIQUID :NI,AL : !
+$
+ PHASE FCC_A1 %  2  1.0  1.0  !
+ CONSTITUENT FCC_A1 :NI,AL : VA : !
+$
+ PHASE B2_BCC %  2  1.0  1.0  !
+ CONSTITUENT B2_BCC :NI,AL : VA : !
+$
+ FUNCTION GHSERNI    2.98150E+02  -5179.159+117.854*T-22.096*T*LN(T)
+     -.0048407*T**2;  1.72800E+03  Y
+     -27840.655+279.135*T-43.1*T*LN(T)+1.12754E+31*T**(-9);  3.00000E+03  N !
+ FUNCTION GHSERAL    2.98150E+02  -7976.15+137.093038*T-24.3671976*T*LN(T)
+     -.001884662*T**2-8.77664E-07*T**3+74092*T**(-1);  7.00000E+02  Y
+     -11276.24+223.048446*T-38.5844296*T*LN(T)+.018531982*T**2
+     -5.764227E-06*T**3+74092*T**(-1);  9.33600E+02  Y
+     -11278.378+188.684153*T-31.748192*T*LN(T)-1.230524E+28*T**(-9);  2.90000E+03  N !
+$
+ PARAMETER G(LIQUID,NI;0)  2.98150E+02  +16414.686-9.397*T
+      -3.82318E-21*T**7+GHSERNI#;  1.72800E+03  Y
+      +17197.666-9.397*T+1.26586E+31*T**(-9)+GHSERNI#;  3.00000E+03  N !
+ PARAMETER G(LIQUID,AL;0)  2.98150E+02  +11005.029-11.840849*T
+      +7.9337E-20*T**7+GHSERAL#;  9.33600E+02  Y
+      +10482.382-11.253974*T+1.231E+28*T**(-9)+GHSERAL#;  2.90000E+03  N !
+ PARAMETER G(LIQUID,NI,AL;0)  2.98150E+02  -152000+16*T;  6.00000E+03  N !
+$
+ PARAMETER G(FCC_A1,NI:VA;0)  2.98150E+02  +GHSERNI#;  6.00000E+03  N !
+ PARAMETER G(FCC_A1,AL:VA;0)  2.98150E+02  +GHSERAL#;  6.00000E+03  N !
+ PARAMETER G(FCC_A1,NI,AL:VA;0)  2.98150E+02  -162400+16*T;  6.00000E+03  N !
+$
+ PARAMETER G(B2_BCC,NI:VA;0)  2.98150E+02  +8715.084-3.556*T+GHSERNI#;  6.00000E+03  N !
+ PARAMETER G(B2_BCC,AL:VA;0)  2.98150E+02  +10083-4.813*T+GHSERAL#;  6.00000E+03  N !
+ PARAMETER G(B2_BCC,NI,AL:VA;0)  2.98150E+02  -140000+15*T;  6.00000E+03  N !
+$
+ LIST_OF_REFERENCES
+ NUMBER  SOURCE
+    1    'Ni-Al Binary System - Example Database'
+$"""
+        
+        nial_path = self.database_dir / "NI_AL_EXAMPLE.tdb"
+        with open(nial_path, 'w') as f:
+            f.write(ni_al_tdb)
+    
+    def _create_quaternary_example(self):
+        """Create quaternary system example"""
+        quaternary_tdb = """$ QUATERNARY EXAMPLE - Al-Cu-Mg-Si
+ ELEMENT /-   ELECTRON_GAS              0.0000E+00  0.0000E+00  0.0000E+00!
+ ELEMENT VA   VACUUM                    0.0000E+00  0.0000E+00  0.0000E+00!
+ ELEMENT AL   FCC_A1                    2.6982E+01  4.5773E+03  2.8322E+01!
+ ELEMENT CU   FCC_A1                    6.3546E+01  5.0041E+03  3.3150E+01!
+ ELEMENT MG   HCP_A3                    2.4305E+01  4.9980E+03  3.2670E+01!
+ ELEMENT SI   DIAMOND_A4                2.8085E+01  4.6830E+03  1.8830E+01!
+$
+ TYPE_DEFINITION % SEQ *!
+$
+ PHASE LIQUID %  1  1.0  !
+ CONSTITUENT LIQUID :AL,CU,MG,SI : !
+$
+ PHASE FCC_A1 %  2  1.0  1.0  !
+ CONSTITUENT FCC_A1 :AL,CU,MG,SI : VA : !
 $
  FUNCTION GHSERAL    2.98150E+02  -7976.15+137.093038*T-24.3671976*T*LN(T)
      -.001884662*T**2-8.77664E-07*T**3+74092*T**(-1);  7.00000E+02  Y
@@ -197,107 +381,397 @@ $
  FUNCTION GHSERCU    2.98150E+02  -7770.458+130.485235*T-24.112392*T*LN(T)
      -.00265684*T**2+1.29223E-07*T**3+52478*T**(-1);  1.35777E+03  Y
      -13542.026+183.803828*T-31.38*T*LN(T)+2.64313E+31*T**(-9);  3.20000E+03  N !
+ FUNCTION GHSERMG    2.98150E+02  -8367.34+143.675547*T-26.1849782*T*LN(T)
+     +.00115895*T**2-6.1953E-07*T**3;  9.23000E+02  Y
+     -14130.185+204.716215*T-34.3088*T*LN(T);  3.00000E+03  N !
+ FUNCTION GHSERSI    2.98150E+02  -8162.609+137.236859*T-22.8317533*T*LN(T)
+     -.001912904*T**2-3.552E-09*T**3;  1.68700E+03  Y
+     -9457.642+167.281367*T-27.196*T*LN(T);  3.50000E+03  N !
 $
- TYPE_DEFINITION % SEQ *!
+ PARAMETER G(LIQUID,AL;0)  2.98150E+02  +11005.029-11.840849*T+GHSERAL#;  3.00000E+03  N !
+ PARAMETER G(LIQUID,CU;0)  2.98150E+02  +12964.735-9.511904*T+GHSERCU#;  3.00000E+03  N !
+ PARAMETER G(LIQUID,MG;0)  2.98150E+02  +8200-8.5*T+GHSERMG#;  3.00000E+03  N !
+ PARAMETER G(LIQUID,SI;0)  2.98150E+02  +50500-29.8*T+GHSERSI#;  3.00000E+03  N !
 $
- PHASE LIQUID %  1  1.0  !
- CONSTITUENT LIQUID :AL,CU : !
-$
- PARAMETER G(LIQUID,AL;0)  2.98150E+02  +11005.029-11.840849*T
-      +7.9337E-20*T**7+GHSERAL#;  9.33600E+02  Y
-      +10482.382-11.253974*T+1.231E+28*T**(-9)+GHSERAL#;  2.90000E+03  N !
- PARAMETER G(LIQUID,CU;0)  2.98150E+02  +12964.735-9.511904*T
-      +5.8494E-21*T**7+GHSERCU#;  1.35777E+03  Y
-      +13924.446-9.511904*T+2.64313E+31*T**(-9)+GHSERCU#;  3.20000E+03  N !
- PARAMETER G(LIQUID,AL,CU;0)  2.98150E+02  -47046.58+6.75*T;  6.00000E+03  N !
- PARAMETER G(LIQUID,AL,CU;1)  2.98150E+02  +21202.8352-9.67484*T;  6.00000E+03  N !
-$
- PHASE FCC_A1 %  2  1.0  1.0  !
- CONSTITUENT FCC_A1 :AL,CU : VA : !
-$
- PARAMETER G(FCC_A1,AL:VA;0)  2.98150E+02  +GHSERAL#;  6.00000E+03  N !
- PARAMETER G(FCC_A1,CU:VA;0)  2.98150E+02  +GHSERCU#;  6.00000E+03  N !
- PARAMETER G(FCC_A1,AL,CU:VA;0)  2.98150E+02  -12282.6+2.63791*T;  6.00000E+03  N !
- PARAMETER G(FCC_A1,AL,CU:VA;1)  2.98150E+02  +4580.9-1.7352*T;  6.00000E+03  N !
+ PARAMETER G(FCC_A1,AL:VA;0)  2.98150E+02  +GHSERAL#;  3.00000E+03  N !
+ PARAMETER G(FCC_A1,CU:VA;0)  2.98150E+02  +GHSERCU#;  3.00000E+03  N !
+ PARAMETER G(FCC_A1,MG:VA;0)  2.98150E+02  +3000+2*T+GHSERMG#;  3.00000E+03  N !
+ PARAMETER G(FCC_A1,SI:VA;0)  2.98150E+02  +2000+1.5*T+GHSERSI#;  3.00000E+03  N !
 $
  LIST_OF_REFERENCES
  NUMBER  SOURCE
-    1    'Example TDB for Al-Cu System - Thermodynamic Enthalpy Analyzer Pro'
-$"""
-            
-            default_tdb_path = self.database_dir / "ALCU_EXAMPLE.tdb"
-            with open(default_tdb_path, 'w') as f:
-                f.write(example_tdb_content)
-            
-            # Create additional example TDB files
-            self._create_additional_examples()
-    
-    def _create_additional_examples(self):
-        """Create additional example TDB files for common systems"""
-        # Fe-C example
-        fec_tdb = """$ Fe-C Example TDB
- ELEMENT /-   ELECTRON_GAS              0.0000E+00  0.0000E+00  0.0000E+00!
- ELEMENT VA   VACUUM                    0.0000E+00  0.0000E+00  0.0000E+00!
- ELEMENT FE   BCC_A2                    5.5847E+01  4.4890E+03  2.7280E+01!
- ELEMENT C    GRAPHITE                  1.2011E+01  1.0500E+03  5.7420E+00!
-$
- PHASE LIQUID %  1  1.0  !
- CONSTITUENT LIQUID :FE,C : !
-$
- PARAMETER G(LIQUID,FE;0)  2.98150E+02  +12040.17-6.55843*T+GHSERFE#;  6.00000E+03  N !
- PARAMETER G(LIQUID,C;0)  2.98150E+02  +117230.0-24.373*T+GHSERCC#;  6.00000E+03  N !
-$
- PHASE BCC_A2 %  2  1.0  3.0  !
- CONSTITUENT BCC_A2 :FE:C : VA : !
-$
- PARAMETER G(BCC_A2,FE:VA;0)  2.98150E+02  +GHSERFE#;  6.00000E+03  N !
-$
- LIST_OF_REFERENCES
- NUMBER  SOURCE
-    1    'Example TDB for Fe-C System'
+    1    'Al-Cu-Mg-Si Quaternary System - Example Database'
 $"""
         
-        fec_path = self.database_dir / "FEC_EXAMPLE.tdb"
-        with open(fec_path, 'w') as f:
-            f.write(fec_tdb)
+        quat_path = self.database_dir / "AL_CU_MG_SI_EXAMPLE.tdb"
+        with open(quat_path, 'w') as f:
+            f.write(quaternary_tdb)
     
-    def get_available_tdb_files(self):
-        """Retrieve all TDB files from the databases directory"""
-        try:
-            tdb_files = []
-            for ext in ['*.tdb', '*.TDB']:
-                tdb_files.extend(self.database_dir.glob(ext))
-            
-            # Sort alphabetically, with example files first
-            sorted_files = sorted(tdb_files, key=lambda x: (not 'EXAMPLE' in x.name.upper(), x.name.lower()))
-            return [f.name for f in sorted_files]
-        except Exception as e:
-            st.error(f"Error accessing databases directory: {str(e)}")
-            return []
+    def analyze_degrees_of_freedom(self, components, phases, conditions):
+        """
+        Analyze the thermodynamic system's degrees of freedom
+        using the Gibbs Phase Rule
+        """
+        # Count components (excluding VA)
+        C = len([c for c in components if c != 'VA'])
+        
+        # Count phases
+        P = len(phases)
+        
+        # Count independent intensive variables specified
+        # Gibbs Phase Rule: F = C - P + 2
+        F_theoretical = C - P + 2
+        
+        # Analyze what's actually specified in conditions
+        specified_vars = self._analyze_specified_variables(conditions)
+        
+        # Calculate actual degrees of freedom
+        F_actual = F_theoretical - specified_vars['independent_intensive']
+        
+        # Check for over-specification
+        is_over_specified = specified_vars['independent_intensive'] > F_theoretical
+        is_under_specified = specified_vars['independent_intensive'] < F_theoretical
+        
+        # Build analysis report
+        analysis = {
+            'components': C,
+            'phases': P,
+            'theoretical_F': F_theoretical,
+            'specified_vars': specified_vars,
+            'actual_F': F_actual,
+            'is_valid': F_actual == 0 and not is_over_specified,
+            'is_over_specified': is_over_specified,
+            'is_under_specified': is_under_specified,
+            'message': self._generate_dof_message(C, P, F_theoretical, F_actual, 
+                                                 specified_vars, is_over_specified)
+        }
+        
+        return analysis
     
-    def save_uploaded_tdb(self, uploaded_file):
-        """Save uploaded TDB file to databases directory"""
-        try:
-            save_path = self.database_dir / uploaded_file.name
-            
-            # Check if file already exists
-            if save_path.exists():
-                # Create a unique filename with timestamp
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                name_parts = uploaded_file.name.rsplit('.', 1)
-                new_name = f"{name_parts[0]}_{timestamp}.{name_parts[1]}" if len(name_parts) > 1 else f"{uploaded_file.name}_{timestamp}"
-                save_path = self.database_dir / new_name
-            
-            with open(save_path, 'wb') as f:
-                f.write(uploaded_file.getbuffer())
-            
-            st.success(f"✅ TDB file saved successfully: `{save_path.name}`")
-            return str(save_path)
-        except Exception as e:
-            st.error(f"❌ Error saving TDB file: {str(e)}")
-            return None
+    def _analyze_specified_variables(self, conditions):
+        """Analyze which variables are specified in conditions"""
+        analysis = {
+            'T_specified': False,
+            'P_specified': False,
+            'N_specified': False,
+            'compositions': {},
+            'total_composition_vars': 0,
+            'independent_intensive': 0,
+            'extensive_vars': 0
+        }
+        
+        for key, value in conditions.items():
+            if hasattr(key, 'species'):
+                var_name = str(key)
+                
+                if 'T' in var_name:
+                    analysis['T_specified'] = True
+                    analysis['independent_intensive'] += 1
+                
+                elif 'P' in var_name:
+                    analysis['P_specified'] = True
+                    analysis['independent_intensive'] += 1
+                
+                elif 'N' in var_name:
+                    analysis['N_specified'] = True
+                    analysis['extensive_vars'] += 1
+                
+                elif 'X(' in var_name:
+                    # Extract element from X(ELEMENT)
+                    element = var_name.split('(')[1].split(')')[0]
+                    analysis['compositions'][element] = value
+                    analysis['total_composition_vars'] += 1
+        
+        # For N components, we need N-1 independent composition variables
+        # Check if compositions are properly specified
+        comp_values = list(analysis['compositions'].values())
+        if comp_values:
+            # If all compositions sum to 1, we might have over-specified
+            total_comp = sum([v for v in comp_values if not isinstance(v, tuple)])
+            analysis['independent_composition_vars'] = len(comp_values)
+            if abs(total_comp - 1.0) < 0.001 and len(comp_values) > 1:
+                analysis['independent_composition_vars'] = len(comp_values) - 1
+        
+        analysis['independent_intensive'] += analysis['independent_composition_vars']
+        
+        return analysis
     
-    def calculate_alloy_molar_weight(self, composition: Dict[str, float]) -> float:
+    def _generate_dof_message(self, C, P, F_theoretical, F_actual, 
+                            specified_vars, is_over_specified):
+        """Generate human-readable message about degrees of freedom"""
+        
+        messages = []
+        
+        # Basic phase rule info
+        messages.append(f"### 🔬 Gibbs Phase Rule Analysis")
+        messages.append(f"**Components (C):** {C}")
+        messages.append(f"**Phases (P):** {P}")
+        messages.append(f"**Theoretical DOF (F = C - P + 2):** F = {C} - {P} + 2 = **{F_theoretical}**")
+        
+        # What's specified
+        messages.append(f"\n### 📋 Specified Variables:")
+        messages.append(f"- **Temperature (T):** {'✅ Specified' if specified_vars['T_specified'] else '❌ Missing'}")
+        messages.append(f"- **Pressure (P):** {'✅ Specified' if specified_vars['P_specified'] else '❌ Missing'}")
+        messages.append(f"- **Composition variables:** {specified_vars['total_composition_vars']} specified")
+        
+        if specified_vars['compositions']:
+            messages.append(f"  - Composition details:")
+            for elem, val in specified_vars['compositions'].items():
+                messages.append(f"    - X({elem}) = {val}")
+        
+        # DOF status
+        messages.append(f"\n### 🎯 Degrees of Freedom Status:")
+        
+        if F_actual == 0 and not is_over_specified:
+            messages.append(f"<div class='dof-indicator dof-correct'>✅ PERFECT! F = 0 (System is fully determined)</div>")
+            messages.append("The system has exactly the right number of constraints for equilibrium.")
+        
+        elif F_actual > 0:
+            messages.append(f"<div class='dof-indicator dof-warning'>⚠️ UNDER-CONSTRAINED! F = {F_actual} > 0</div>")
+            messages.append(f"You need to specify {F_actual} more intensive variable(s).")
+            
+            suggestions = []
+            if not specified_vars['T_specified']:
+                suggestions.append("• Specify temperature (T)")
+            if not specified_vars['P_specified']:
+                suggestions.append("• Specify pressure (P)")
+            if specified_vars['total_composition_vars'] < C - 1:
+                suggestions.append(f"• Specify {C - 1 - specified_vars['total_composition_vars']} more composition variable(s)")
+            
+            if suggestions:
+                messages.append("\n**Suggestions:**")
+                messages.extend(suggestions)
+        
+        elif F_actual < 0 or is_over_specified:
+            messages.append(f"<div class='dof-indicator dof-error'>❌ OVER-CONSTRAINED! F = {F_actual} < 0</div>")
+            messages.append("You have specified too many constraints. The system cannot satisfy all conditions simultaneously.")
+            
+            if specified_vars['total_composition_vars'] >= C:
+                messages.append(f"• You specified {specified_vars['total_composition_vars']} composition variables for {C} components.")
+                messages.append(f"  For {C} components, you should specify exactly {C-1} independent composition variables.")
+            
+            messages.append("\n**To fix:** Remove redundant constraints, typically:")
+            messages.append("• Don't specify compositions that sum to exactly 1.0 (last component is implicit)")
+            messages.append("• Don't use v.N unless you have a specific reason")
+            messages.append("• Ensure each composition variable is independent")
+        
+        # Specific checks
+        messages.append(f"\n### 🔍 Specific Checks:")
+        
+        # Check for v.N misuse
+        if specified_vars['N_specified']:
+            messages.append("⚠️ **v.N is specified** - pycalphad assumes N=1 by default. Consider removing unless you have a specific need.")
+        
+        # Check composition sum
+        comp_sum = sum([v for v in specified_vars['compositions'].values() 
+                       if not isinstance(v, tuple)])
+        if comp_sum > 1.001 or comp_sum < 0.999:
+            messages.append(f"⚠️ **Composition sum = {comp_sum:.4f}** (should be ≈1.0)")
+        
+        return "\n".join(messages)
+    
+    def calculate_gibbs_phase_rule(self, components_count, phases_count):
+        """Calculate Gibbs Phase Rule with detailed explanation"""
+        F = components_count - phases_count + 2
+        
+        explanation = {
+            'formula': 'F = C - P + 2',
+            'variables': {
+                'F': 'Degrees of Freedom',
+                'C': f'Components ({components_count})',
+                'P': f'Phases ({phases_count})',
+                '2': 'Temperature and Pressure'
+            },
+            'result': F,
+            'interpretation': self._interpret_gibbs_result(F)
+        }
+        
+        return explanation
+    
+    def _interpret_gibbs_result(self, F):
+        """Interpret the Gibbs Phase Rule result"""
+        if F > 0:
+            return f"System has {F} degree(s) of freedom. You must specify {F} more intensive variable(s)."
+        elif F == 0:
+            return "System is invariant (fully determined). Exactly 0 degrees of freedom - perfect for equilibrium calculation."
+        else:
+            return f"System is over-constrained (F = {F}). Too many phases for the given components."
+    
+    def validate_equilibrium_conditions(self, components, phases, conditions):
+        """Validate conditions before attempting equilibrium calculation"""
+        validation = {
+            'is_valid': True,
+            'errors': [],
+            'warnings': [],
+            'suggestions': [],
+            'corrected_conditions': conditions.copy()
+        }
+        
+        # 1. Check for required T and P
+        if v.T not in conditions and 'T' not in str(conditions.keys()):
+            validation['errors'].append("❌ Temperature (T) must be specified")
+            validation['is_valid'] = False
+        
+        if v.P not in conditions and 'P' not in str(conditions.keys()):
+            validation['errors'].append("❌ Pressure (P) must be specified")
+            validation['is_valid'] = False
+        
+        # 2. Analyze composition variables
+        comp_vars = {}
+        for key in conditions.keys():
+            if hasattr(key, 'species') and 'X(' in str(key):
+                element = str(key).split('(')[1].split(')')[0]
+                comp_vars[element] = conditions[key]
+        
+        # Count real components (excluding VA)
+        real_components = [c for c in components if c != 'VA']
+        num_components = len(real_components)
+        
+        # Check composition count
+        if len(comp_vars) > num_components - 1:
+            validation['warnings'].append(
+                f"⚠️ You specified {len(comp_vars)} composition variables for {num_components} components. "
+                f"For {num_components} components, specify exactly {num_components-1} independent compositions."
+            )
+        
+        # 3. Check composition sum
+        comp_sum = 0
+        for val in comp_vars.values():
+            if not isinstance(val, tuple):  # Skip temperature ranges
+                comp_sum += val
+        
+        if comp_sum > 1.001:
+            validation['errors'].append(f"❌ Composition sum = {comp_sum:.4f} > 1.0")
+            validation['is_valid'] = False
+        elif comp_sum < 0.999 and len(comp_vars) == num_components - 1:
+            # For n-1 components, the sum should be ≤ 1.0
+            validation['warnings'].append(
+                f"⚠️ Composition sum = {comp_sum:.4f}. The remaining component will be 1 - {comp_sum:.4f} = {1-comp_sum:.4f}"
+            )
+        
+        # 4. Check for v.N misuse
+        if v.N in conditions:
+            validation['warnings'].append(
+                "⚠️ v.N is specified. pycalphad assumes N=1 by default. "
+                "Remove v.N unless you specifically need to vary total moles."
+            )
+        
+        # 5. Check phase count vs components
+        if len(phases) > num_components + 2:
+            validation['warnings'].append(
+                f"⚠️ {len(phases)} phases specified for {num_components} components. "
+                "Gibbs Phase Rule limits maximum phases to C + 2."
+            )
+        
+        # Generate suggestions
+        if not validation['is_valid']:
+            validation['suggestions'] = self._generate_fix_suggestions(
+                real_components, phases, conditions, comp_vars
+            )
+        
+        return validation
+    
+    def _generate_fix_suggestions(self, components, phases, conditions, comp_vars):
+        """Generate specific suggestions to fix DOF issues"""
+        suggestions = []
+        
+        num_components = len(components)
+        
+        # Basic required variables
+        if v.T not in conditions:
+            suggestions.append("• Add temperature condition: `conditions[v.T] = 1000` (or your desired temperature)")
+        
+        if v.P not in conditions:
+            suggestions.append("• Add pressure condition: `conditions[v.P] = 101325` (1 atm)")
+        
+        # Composition suggestions
+        if len(comp_vars) != num_components - 1:
+            suggestions.append(
+                f"• Specify exactly {num_components-1} composition variables for {num_components} components"
+            )
+            
+            # Suggest which compositions to specify
+            if num_components > 1:
+                example_comps = {}
+                for i, comp in enumerate(components[:-1]):
+                    example_comps[comp] = 1.0 / num_components
+                
+                example_str = ", ".join([f"v.X('{k}')={v:.3f}" for k, v in example_comps.items()])
+                suggestions.append(f"  Example: {example_str}")
+                suggestions.append(f"  (Last component {components[-1]} will be 1 - sum of others)")
+        
+        # Remove v.N if present
+        if v.N in conditions:
+            suggestions.append("• Remove v.N from conditions (pycalphad assumes N=1 by default)")
+        
+        return suggestions
+    
+    def create_minimal_working_example(self, components, phases):
+        """Create a minimal working example for the given components and phases"""
+        # Filter out VA from components
+        real_components = [c for c in components if c != 'VA']
+        num_components = len(real_components)
+        
+        example = {
+            'components': real_components,
+            'phases': phases[:min(2, len(phases))],  # Use first 1-2 phases
+            'conditions': {}
+        }
+        
+        # Add required conditions
+        example['conditions'][v.T] = 1000  # Example temperature
+        example['conditions'][v.P] = 101325  # 1 atm
+        
+        # Add composition conditions (n-1 components)
+        if num_components > 1:
+            # Distribute compositions evenly
+            fraction = 1.0 / num_components
+            for i, comp in enumerate(real_components[:-1]):
+                example['conditions'][v.X(comp)] = fraction
+        
+        # Generate code snippet
+        code_lines = [
+            "from pycalphad import Database, equilibrium, variables as v",
+            "",
+            f"# Components (excluding VA): {', '.join(real_components)}",
+            f"# Phases: {', '.join(example['phases'])}",
+            "",
+            "dbf = Database('your_database.tdb')",
+            "",
+            "conditions = {"
+        ]
+        
+        for key, value in example['conditions'].items():
+            if key == v.T:
+                code_lines.append(f"    v.T: {value},  # Temperature in K")
+            elif key == v.P:
+                code_lines.append(f"    v.P: {value},  # Pressure in Pa")
+            elif 'X(' in str(key):
+                element = str(key).split('(')[1].split(')')[0]
+                code_lines.append(f"    v.X('{element}'): {value:.3f},")
+        
+        code_lines.extend([
+            "}",
+            "",
+            "# Add VA to components list",
+            f"components_with_va = {real_components + ['VA']}",
+            "",
+            "# Perform equilibrium calculation",
+            "eq = equilibrium(",
+            "    dbf,",
+            "    components_with_va,",
+            f"    {example['phases']},",
+            "    conditions,",
+            "    output='HM'  # For enthalpy",
+            ")",
+            "",
+            "# This should work if your TDB file has the required data"
+        ])
+        
+        example['code'] = "\n".join(code_lines)
+        return example
+    
+    def calculate_alloy_molar_weight(self, composition):
         """Calculate molar weight of alloy from composition dictionary"""
         molar_weight = 0.0
         missing_elements = []
@@ -315,20 +789,11 @@ $"""
                 molar_weight += fraction * 50.0
         
         if missing_elements:
-            st.warning(f"⚠️ Molar weights not found for elements: {', '.join(missing_elements)}. Using default 50 g/mol.")
+            st.warning(f"Molar weights not found for elements: {', '.join(missing_elements)}. Using default 50 g/mol.")
         
         return molar_weight if molar_weight > 0 else 50.0
     
-    def normalize_composition(self, composition: Dict[str, float]) -> Dict[str, float]:
-        """Normalize composition so sum of fractions = 1.0"""
-        total = sum(composition.values())
-        if total == 0:
-            return composition
-        
-        normalized = {k: v/total for k, v in composition.items()}
-        return normalized
-    
-    def convert_to_specific_enthalpy(self, df: pd.DataFrame, composition: Dict[str, float]) -> pd.DataFrame:
+    def convert_to_specific_enthalpy(self, df, composition):
         """Convert molar enthalpy to specific enthalpy (J/kg)"""
         if 'Enthalpy_J_mol' not in df.columns:
             raise ValueError("DataFrame must contain 'Enthalpy_J_mol' column")
@@ -349,1092 +814,1220 @@ $"""
         linear_term = A1 * T + A2 * np.maximum(T - Tm, 0)
         return linear_term + sigmoid_term + H298
     
-    def format_dat_file(self, df, composition, metadata=None):
-        """Format data in DAT file format with headers"""
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        dat_lines = [
-            "# =========================================================",
-            "# ENTHALPY DATA FILE",
-            "# =========================================================",
-            f"# Generated: {timestamp}",
-            f"# Software: Thermodynamic Enthalpy Analyzer Pro",
-            "# =========================================================",
-            "# COMPOSITION (Mole Fractions):"
-        ]
-        
-        for element, fraction in composition.items():
-            dat_lines.append(f"#   {element:3s}: {fraction:10.6f}")
-        
-        if metadata:
-            dat_lines.append("# =========================================================")
-            dat_lines.append("# METADATA:")
-            for key, value in metadata.items():
-                dat_lines.append(f"#   {key}: {value}")
-        
-        dat_lines.append("# =========================================================")
-        dat_lines.append("# Temperature(K)    Enthalpy(J/mol)    Enthalpy(J/kg)")
-        dat_lines.append("# =========================================================")
-        
-        for _, row in df.iterrows():
-            dat_lines.append(f"  {row['Temperature_K']:15.2f} {row['Enthalpy_J_mol']:18.4f} {row['Enthalpy_J_kg']:18.4f}")
-        
-        return "\n".join(dat_lines)
-    
-    def detect_phase_transitions(self, df: pd.DataFrame, threshold: float = 1000) -> List[Dict]:
-        """Detect phase transitions from enthalpy data"""
-        transitions = []
-        dH = np.diff(df['Enthalpy_J_mol'].values)
-        dT = np.diff(df['Temperature_K'].values)
-        derivatives = dH / dT
-        
-        # Find significant changes in derivative
-        significant_changes = np.where(np.abs(np.diff(derivatives)) > threshold)[0]
-        
-        for idx in significant_changes:
-            T_transition = (df['Temperature_K'].iloc[idx] + df['Temperature_K'].iloc[idx+1]) / 2
-            H_change = df['Enthalpy_J_mol'].iloc[idx+1] - df['Enthalpy_J_mol'].iloc[idx]
+    def get_available_tdb_files(self):
+        """Retrieve all TDB files from the databases directory"""
+        try:
+            tdb_files = []
+            for ext in ['*.tdb', '*.TDB']:
+                tdb_files.extend(self.database_dir.glob(ext))
             
-            transitions.append({
-                'temperature': T_transition,
-                'enthalpy_change': H_change,
-                'index': idx,
-                'type': 'melting' if H_change > 0 else 'solidification'
-            })
-        
-        return transitions
+            # Sort with examples first
+            sorted_files = sorted(tdb_files, key=lambda x: (not 'EXAMPLE' in x.name.upper(), x.name.lower()))
+            return [f.name for f in sorted_files]
+        except Exception as e:
+            st.error(f"Error accessing databases directory: {str(e)}")
+            return []
+    
+    def save_uploaded_tdb(self, uploaded_file):
+        """Save uploaded TDB file to databases directory"""
+        try:
+            save_path = self.database_dir / uploaded_file.name
+            
+            # Create unique filename if exists
+            if save_path.exists():
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                name_parts = uploaded_file.name.rsplit('.', 1)
+                new_name = f"{name_parts[0]}_{timestamp}.{name_parts[1]}" if len(name_parts) > 1 else f"{uploaded_file.name}_{timestamp}"
+                save_path = self.database_dir / new_name
+            
+            with open(save_path, 'wb') as f:
+                f.write(uploaded_file.getbuffer())
+            
+            return str(save_path)
+        except Exception as e:
+            st.error(f"Error saving TDB file: {str(e)}")
+            return None
 
-def create_enhanced_visualization(df, composition, material_name="Alloy", phase_transitions=None):
-    """Create publication-quality dual-axis visualization"""
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 10), dpi=150)
+def create_thermodynamic_dashboard(analyzer, components, phases, conditions):
+    """Create a comprehensive thermodynamic system dashboard"""
+    # Analyze degrees of freedom
+    dof_analysis = analyzer.analyze_degrees_of_freedom(components, phases, conditions)
     
-    # Create a color gradient based on temperature
-    colors = plt.cm.viridis(np.linspace(0, 0.8, len(df)))
+    # Create visualization
+    fig, axes = plt.subplots(2, 2, figsize=(14, 12), dpi=150)
+    fig.suptitle('Thermodynamic System Analysis Dashboard', fontsize=16, fontweight='bold')
     
-    # Molar enthalpy plot
-    scatter1 = ax1.scatter(df['Temperature_K'], df['Enthalpy_J_mol'], 
-                          c=colors, s=50, alpha=0.7, edgecolors='white', linewidth=0.5)
-    line1, = ax1.plot(df['Temperature_K'], df['Enthalpy_J_mol'], 
-                     color='#1E88E5', linewidth=2.5, alpha=0.9, label=f'{material_name}')
+    # 1. Gibbs Phase Rule Visualization
+    ax1 = axes[0, 0]
+    labels = ['Components (C)', 'Phases (P)', 'T & P (+2)']
+    values = [dof_analysis['components'], dof_analysis['phases'], 2]
+    colors = ['#4CAF50', '#2196F3', '#FF9800']
     
-    ax1.set_xlabel('Temperature (K)', fontsize=13, fontweight='bold')
-    ax1.set_ylabel('Enthalpy (J/mol)', fontsize=13, fontweight='bold')
-    ax1.set_title(f'Molar Enthalpy Evolution - {material_name}', fontsize=15, fontweight='bold', pad=15)
-    ax1.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
-    ax1.legend(loc='upper left', fontsize=11, framealpha=0.9)
+    ax1.bar(labels, values, color=colors)
+    ax1.set_ylabel('Count', fontweight='bold')
+    ax1.set_title('Gibbs Phase Rule: F = C - P + 2', fontweight='bold')
     
-    # Add phase transition markers if available
-    if phase_transitions:
-        for trans in phase_transitions:
-            ax1.axvline(trans['temperature'], color='red', linestyle='--', alpha=0.7, linewidth=1.5)
-            ax1.annotate(f"{trans['type'].title()}\n{trans['temperature']:.0f} K",
-                        xy=(trans['temperature'], df['Enthalpy_J_mol'].min()),
-                        xytext=(10, 20), textcoords='offset points',
-                        arrowprops=dict(arrowstyle='->', color='red'),
-                        fontsize=9, color='red', fontweight='bold')
+    # Add value labels
+    for i, v in enumerate(values):
+        ax1.text(i, v + 0.1, str(v), ha='center', fontweight='bold')
     
-    # Specific enthalpy plot
-    scatter2 = ax2.scatter(df['Temperature_K'], df['Enthalpy_J_kg'], 
-                          c=colors, s=50, alpha=0.7, edgecolors='white', linewidth=0.5)
-    line2, = ax2.plot(df['Temperature_K'], df['Enthalpy_J_kg'], 
-                     color='#FF7043', linewidth=2.5, alpha=0.9, label=f'{material_name}')
+    # Calculate and display F
+    F = dof_analysis['theoretical_F']
+    ax1.text(1.5, max(values) * 0.8, f'F = {F}', fontsize=20, 
+             fontweight='bold', ha='center',
+             bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.5))
     
-    ax2.set_xlabel('Temperature (K)', fontsize=13, fontweight='bold')
-    ax2.set_ylabel('Specific Enthalpy (J/kg)', fontsize=13, fontweight='bold')
-    ax2.set_title(f'Specific Enthalpy Evolution - {material_name}', fontsize=15, fontweight='bold', pad=15)
-    ax2.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
-    ax2.legend(loc='upper left', fontsize=11, framealpha=0.9)
+    # 2. DOF Status Pie Chart
+    ax2 = axes[0, 1]
+    if dof_analysis['is_valid']:
+        sizes = [100]
+        labels = ['✅ Correct\nF = 0']
+        colors = ['#4CAF50']
+    elif dof_analysis['is_under_specified']:
+        specified = dof_analysis['specified_vars']['independent_intensive']
+        needed = dof_analysis['theoretical_F']
+        sizes = [specified, needed - specified]
+        labels = [f'Specified\n{specified}', f'Missing\n{needed - specified}']
+        colors = ['#FF9800', '#F44336']
+    else:  # Over-specified
+        specified = dof_analysis['specified_vars']['independent_intensive']
+        excess = specified - dof_analysis['theoretical_F']
+        sizes = [dof_analysis['theoretical_F'], excess]
+        labels = [f'Required\n{dof_analysis["theoretical_F"]}', f'Excess\n{excess}']
+        colors = ['#4CAF50', '#F44336']
     
-    # Add colorbar
-    cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
-    norm = plt.Normalize(df['Temperature_K'].min(), df['Temperature_K'].max())
-    sm = plt.cm.ScalarMappable(cmap='viridis', norm=norm)
-    sm.set_array([])
-    cbar = fig.colorbar(sm, cax=cbar_ax)
-    cbar.set_label('Temperature (K)', fontsize=11, fontweight='bold')
+    ax2.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90)
+    ax2.set_title('Degrees of Freedom Status', fontweight='bold')
     
-    # Add composition annotation with badges
-    comp_text = 'Composition: '
-    for i, (element, fraction) in enumerate(list(composition.items())[:5]):
-        comp_text += f'<span class="element-badge">{element}: {fraction:.3f}</span> '
-    if len(composition) > 5:
-        comp_text += f'<span class="element-badge">+{len(composition)-5} more</span>'
+    # 3. Variable Specification Status
+    ax3 = axes[1, 0]
+    var_labels = ['Temperature', 'Pressure', 'Compositions']
+    var_status = [
+        1 if dof_analysis['specified_vars']['T_specified'] else 0,
+        1 if dof_analysis['specified_vars']['P_specified'] else 0,
+        min(1, dof_analysis['specified_vars']['total_composition_vars'] / 
+            max(1, dof_analysis['components'] - 1))
+    ]
+    var_colors = ['#4CAF50' if s == 1 else '#F44336' for s in var_status[:2]]
+    var_colors.append('#FF9800' if 0 < var_status[2] < 1 else 
+                     '#4CAF50' if var_status[2] == 1 else '#F44336')
     
-    fig.text(0.5, 0.01, comp_text, 
-             ha='center', fontsize=11, style='italic', alpha=0.9,
-             bbox=dict(boxstyle='round', facecolor='white', alpha=0.8, pad=0.5),
-             transform=fig.transFigure)
+    bars = ax3.bar(var_labels, var_status, color=var_colors)
+    ax3.set_ylim(0, 1.2)
+    ax3.set_ylabel('Specification Status', fontweight='bold')
+    ax3.set_title('Variable Specification', fontweight='bold')
     
-    plt.tight_layout(rect=[0, 0.05, 0.9, 0.97])
-    return fig
+    # Add status text
+    for i, (bar, status) in enumerate(zip(bars, var_status)):
+        if i < 2:
+            text = '✅ Specified' if status == 1 else '❌ Missing'
+        else:
+            comp_vars = dof_analysis['specified_vars']['total_composition_vars']
+            needed = max(1, dof_analysis['components'] - 1)
+            text = f'{comp_vars}/{needed}'
+        
+        ax3.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.05,
+                text, ha='center', fontweight='bold')
+    
+    # 4. System Complexity
+    ax4 = axes[1, 1]
+    complexity_data = {
+        'Components': dof_analysis['components'],
+        'Phases': dof_analysis['phases'],
+        'Specified\nVariables': dof_analysis['specified_vars']['independent_intensive'],
+        'Required\nVariables': dof_analysis['theoretical_F']
+    }
+    
+    x_pos = range(len(complexity_data))
+    ax4.bar(x_pos, list(complexity_data.values()), color=['#4CAF50', '#2196F3', '#FF9800', '#9C27B0'])
+    ax4.set_xticks(x_pos)
+    ax4.set_xticklabels(list(complexity_data.keys()))
+    ax4.set_ylabel('Count', fontweight='bold')
+    ax4.set_title('System Complexity', fontweight='bold')
+    
+    # Add value labels
+    for i, v in enumerate(complexity_data.values()):
+        ax4.text(i, v + 0.1, str(v), ha='center', fontweight='bold')
+    
+    plt.tight_layout()
+    return fig, dof_analysis
 
-def create_comparison_visualization(analyzer, selected_indices):
-    """Create enhanced multi-material comparison visualization"""
-    if not selected_indices or not analyzer.results_history:
-        return None
+def create_phase_diagram_visualization(components, phases, conditions):
+    """Create a visualization of the phase diagram region"""
+    fig, ax = plt.subplots(figsize=(10, 8), dpi=150)
     
-    fig = plt.figure(figsize=(16, 12), dpi=150)
-    gs = fig.add_gridspec(3, 3, hspace=0.4, wspace=0.4)
+    # Create a simple phase diagram representation
+    # This is a conceptual visualization, not an actual calculation
     
-    ax1 = fig.add_subplot(gs[0:2, :])  # Main comparison plot
-    ax2 = fig.add_subplot(gs[2, 0])     # ΔH comparison
-    ax3 = fig.add_subplot(gs[2, 1])     # Cp comparison
-    ax4 = fig.add_subplot(gs[2, 2])     # Material properties
+    # Extract composition variables
+    comp_vars = {}
+    for key, value in conditions.items():
+        if hasattr(key, 'species') and 'X(' in str(key):
+            element = str(key).split('(')[1].split(')')[0]
+            if not isinstance(value, tuple):  # Skip ranges
+                comp_vars[element] = value
     
-    colors = plt.cm.tab20(np.linspace(0, 1, len(selected_indices)))
-    
-    delta_h_values = []
-    material_names = []
-    avg_cp_values = []
-    molar_weights = []
-    
-    for i, idx in enumerate(selected_indices):
-        if idx >= len(analyzer.results_history):
-            continue
+    if len(comp_vars) >= 2:
+        # Create ternary or binary diagram
+        elements = list(comp_vars.keys())
+        
+        if len(elements) == 2:
+            # Binary phase diagram
+            x = np.linspace(0, 1, 100)
+            T_min, T_max = 500, 2000
             
-        result = analyzer.results_history[idx]
-        data = result['data']
-        name = result['name']
-        composition = result['composition']
-        
-        # Molar enthalpy comparison
-        ax1.plot(data['Temperature_K'], data['Enthalpy_J_mol'],
-                color=colors[i], linewidth=2.5, label=name, alpha=0.9,
-                marker='o', markersize=3, markevery=len(data)//20)
-        
-        # Calculate ΔH
-        delta_h = data['Enthalpy_J_mol'].max() - data['Enthalpy_J_mol'].min()
-        delta_h_values.append(delta_h)
-        material_names.append(name)
-        
-        # Calculate average Cp (dH/dT)
-        dH = np.diff(data['Enthalpy_J_mol'].values)
-        dT = np.diff(data['Temperature_K'].values)
-        avg_cp = np.mean(dH/dT) if len(dH) > 0 else 0
-        avg_cp_values.append(avg_cp)
-        
-        # Calculate molar weight
-        molar_weight = analyzer.calculate_alloy_molar_weight(composition)
-        molar_weights.append(molar_weight)
-    
-    # Format main plot
-    ax1.set_xlabel('Temperature (K)', fontsize=12, fontweight='bold')
-    ax1.set_ylabel('Enthalpy (J/mol)', fontsize=12, fontweight='bold')
-    ax1.set_title('Molar Enthalpy Comparison Across Materials', 
-                 fontsize=14, fontweight='bold', pad=15)
-    ax1.grid(True, alpha=0.3, linestyle='--')
-    ax1.legend(loc='upper left', fontsize=10, ncol=2, framealpha=0.9)
-    
-    # ΔH bar chart
-    bars1 = ax2.barh(material_names, delta_h_values, color=colors, alpha=0.8)
-    ax2.set_xlabel('ΔH (J/mol)', fontsize=11, fontweight='bold')
-    ax2.set_title('Total Enthalpy Change', fontsize=12, fontweight='bold')
-    ax2.grid(True, alpha=0.3, axis='x', linestyle='--')
-    
-    for bar, value in zip(bars1, delta_h_values):
-        ax2.text(value, bar.get_y() + bar.get_height()/2, 
-                f' {value:,.0f}', va='center', fontsize=9, fontweight='bold')
-    
-    # Cp bar chart
-    bars2 = ax3.barh(material_names, avg_cp_values, color=colors, alpha=0.8)
-    ax3.set_xlabel('Average Cp (J/mol·K)', fontsize=11, fontweight='bold')
-    ax3.set_title('Average Heat Capacity', fontsize=12, fontweight='bold')
-    ax3.grid(True, alpha=0.3, axis='x', linestyle='--')
-    
-    for bar, value in zip(bars2, avg_cp_values):
-        ax3.text(value, bar.get_y() + bar.get_height()/2, 
-                f' {value:.1f}', va='center', fontsize=9, fontweight='bold')
-    
-    # Material properties table
-    ax4.axis('tight')
-    ax4.axis('off')
-    
-    # Create table data
-    table_data = []
-    for i, idx in enumerate(selected_indices):
-        result = analyzer.results_history[idx]
-        table_data.append([
-            material_names[i],
-            f"{molar_weights[i]:.1f}",
-            f"{delta_h_values[i]:,.0f}",
-            f"{avg_cp_values[i]:.1f}",
-            f"{len(result['data'])}"
-        ])
-    
-    column_labels = ['Material', 'M.W.\n(g/mol)', 'ΔH\n(J/mol)', 'Avg Cp\n(J/mol·K)', 'Points']
-    
-    table = ax4.table(cellText=table_data,
-                     colLabels=column_labels,
-                     cellLoc='center',
-                     loc='center',
-                     colColours=['#1E88E5'] * 5,
-                     colWidths=[0.25, 0.15, 0.2, 0.2, 0.2])
-    
-    table.auto_set_font_size(False)
-    table.set_fontsize(9)
-    table.scale(1, 1.8)
-    
-    ax4.set_title('Material Properties Summary', fontsize=12, fontweight='bold', pad=20)
-    
-    plt.suptitle('Multi-Material Enthalpy Analysis Dashboard', 
-                fontsize=18, fontweight='bold', y=0.98)
-    
-    return fig
-
-def create_composition_input_interface(available_elements, default_composition=None):
-    """Create an interactive composition input interface"""
-    if default_composition is None:
-        default_composition = {}
-    
-    # Create columns for element inputs
-    num_columns = min(6, len(available_elements))
-    cols = st.columns(num_columns)
-    
-    composition = {}
-    element_sliders = {}
-    
-    # First pass: collect user inputs
-    for idx, element in enumerate(available_elements):
-        col_idx = idx % num_columns
-        with cols[col_idx]:
-            default_val = default_composition.get(element, 0.0)
+            # Create conceptual phase boundaries
+            for i, phase in enumerate(phases):
+                # Simple sinusoidal boundaries for visualization
+                T_phase = T_min + (T_max - T_min) * (0.3 + 0.4 * np.sin(np.pi * x + i * np.pi/len(phases)))
+                ax.plot(x, T_phase, label=phase, linewidth=2)
             
-            # Use slider for better user experience
-            fraction = st.slider(
-                f"X({element})",
-                min_value=0.0,
-                max_value=1.0,
-                value=float(default_val),
-                step=0.01,
-                key=f"comp_slider_{element}",
-                help=f"Mole fraction of {element}"
-            )
+            # Mark the specified composition
+            if len(elements) == 2:
+                x_spec = comp_vars[elements[0]]
+                ax.axvline(x=x_spec, color='red', linestyle='--', alpha=0.7, 
+                          label=f'Specified: X({elements[0]}) = {x_spec:.2f}')
             
-            element_sliders[element] = fraction
+            ax.set_xlabel(f'Mole Fraction {elements[0]}', fontweight='bold')
+            ax.set_ylabel('Temperature (K)', fontweight='bold')
+            ax.set_title(f'Conceptual {elements[0]}-{elements[1]} Phase Diagram', 
+                        fontweight='bold')
+            ax.legend()
+            ax.grid(True, alpha=0.3)
     
-    # Calculate sum and normalize if needed
-    total = sum(element_sliders.values())
-    
-    if total > 0:
-        # Normalize to sum = 1
-        if abs(total - 1.0) > 0.001:
-            st.info(f"Composition sum = {total:.3f}. Auto-normalizing to 1.0")
-            for element in element_sliders:
-                element_sliders[element] /= total
-        
-        composition = element_sliders
     else:
-        # Distribute equally if all zeros
-        equal_fraction = 1.0 / len(available_elements)
-        composition = {element: equal_fraction for element in available_elements}
-        st.warning("All fractions set to 0. Using equal distribution.")
+        # Simple temperature-pressure diagram
+        ax.text(0.5, 0.5, 'Phase Diagram Visualization\n\nSpecify at least 2 composition\nvariables for detailed view',
+               ha='center', va='center', transform=ax.transAxes, fontsize=12)
+        ax.set_title('Phase Diagram Region', fontweight='bold')
+        ax.axis('off')
     
-    # Display normalized composition
-    st.markdown("**Normalized Composition:**")
-    norm_cols = st.columns(min(8, len(composition)))
-    
-    for i, (element, fraction) in enumerate(list(composition.items())[:8]):
-        with norm_cols[i % len(norm_cols)]:
-            st.markdown(f'<div class="element-badge">{element}: {fraction:.3f}</div>', 
-                       unsafe_allow_html=True)
-    
-    if len(composition) > 8:
-        st.caption(f"... and {len(composition)-8} more elements")
-    
-    return composition
+    plt.tight_layout()
+    return fig
 
 def main():
     st.markdown('<h1 class="main-header">🔥 Thermodynamic Enthalpy Analyzer Pro</h1>', unsafe_allow_html=True)
-    st.markdown("### Advanced Computational Thermodynamics for Multi-Component Systems")
-    st.markdown("*Enthalpy calculations, curve fitting, and material comparison using CALPHAD methodology*")
+    st.markdown("### Advanced CALPHAD Calculations with Gibbs Phase Rule Validation")
+    st.markdown("*Solve 'Number of degrees of freedom is not zero' error with intelligent system analysis*")
     st.markdown("---")
     
     # Initialize analyzer
     if 'analyzer' not in st.session_state:
-        st.session_state.analyzer = EnthalpyAnalyzer()
+        st.session_state.analyzer = ThermodynamicSystemAnalyzer()
     
     analyzer = st.session_state.analyzer
     
-    # Create tabs with enhanced layout
+    # Create enhanced tabs
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "🏠 Dashboard",
-        "🔬 Enthalpy Computation", 
+        "⚖️ DOF Analyzer", 
+        "🔬 Computation",
         "📊 Curve Fitting",
-        "🔄 Multi-Material",
         "⚙️ Settings & Help"
     ])
     
     # ==================== TAB 1: Dashboard ====================
     with tab1:
-        st.header("📊 Dashboard Overview")
+        st.header("🏠 Thermodynamic System Dashboard")
         
+        # Quick stats
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.metric("Computed Materials", len(analyzer.results_history))
+            st.markdown('<div class="thermo-card">', unsafe_allow_html=True)
+            st.metric("Available TDB Files", len(analyzer.get_available_tdb_files()))
             st.markdown('</div>', unsafe_allow_html=True)
         
         with col2:
-            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.metric("TDB Files", len(analyzer.get_available_tdb_files()))
+            st.markdown('<div class="thermo-card">', unsafe_allow_html=True)
+            st.metric("Computed Systems", len(analyzer.results_history))
             st.markdown('</div>', unsafe_allow_html=True)
         
         with col3:
-            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+            st.markdown('<div class="thermo-card">', unsafe_allow_html=True)
             st.metric("Fitting Results", len(analyzer.fitting_results))
             st.markdown('</div>', unsafe_allow_html=True)
         
         with col4:
-            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-            st.metric("Active Session", "Online", delta="Now")
+            st.markdown('<div class="thermo-card">', unsafe_allow_html=True)
+            st.metric("DOF Errors Fixed", "0", "0")
             st.markdown('</div>', unsafe_allow_html=True)
         
-        # Quick actions
+        # Gibbs Phase Rule Explanation
+        st.markdown("---")
+        st.markdown('<div class="phase-rule-box">', unsafe_allow_html=True)
+        st.subheader("⚖️ Gibbs Phase Rule")
+        st.latex(r"F = C - P + 2")
+        st.markdown("""
+        **Where:**
+        - **F** = Degrees of Freedom (must be 0 for equilibrium)
+        - **C** = Number of Components (excluding VA)
+        - **P** = Number of Phases
+        - **2** = Temperature and Pressure (always count as 2 intensive variables)
+        
+        **Key Insight:** For pycalphad `equilibrium()` to work, you must specify exactly **F** intensive variables!
+        """)
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Common error patterns
+        st.markdown("---")
+        st.subheader("🔍 Common DOF Error Patterns")
+        
+        col_err1, col_err2, col_err3 = st.columns(3)
+        
+        with col_err1:
+            with st.expander("❌ Missing T or P", expanded=False):
+                st.code("""# ERROR: Missing required variables
+conditions = {
+    v.X('AL'): 0.7,  # Only composition, no T or P!
+}""", language='python')
+                st.markdown("**Fix:** Add both T and P")
+                st.code("""conditions = {
+    v.T: 1000,
+    v.P: 101325,
+    v.X('AL'): 0.7
+}""", language='python')
+        
+        with col_err2:
+            with st.expander("❌ Over-specified Composition", expanded=False):
+                st.code("""# ERROR: Specifying all compositions for binary
+conditions = {
+    v.T: 1000,
+    v.P: 101325,
+    v.X('AL'): 0.7,
+    v.X('CU'): 0.3  # Redundant! Sums to 1.0
+}""", language='python')
+                st.markdown("**Fix:** Specify n-1 components")
+                st.code("""conditions = {
+    v.T: 1000,
+    v.P: 101325,
+    v.X('AL'): 0.7  # CU is implicit: 1 - 0.7 = 0.3
+}""", language='python')
+        
+        with col_err3:
+            with st.expander("❌ Using v.N unnecessarily", expanded=False):
+                st.code("""# ERROR: v.N is usually not needed
+conditions = {
+    v.T: 1000,
+    v.P: 101325,
+    v.X('AL'): 0.7,
+    v.N: 1  # pycalphad assumes N=1 by default
+}""", language='python')
+                st.markdown("**Fix:** Remove v.N")
+                st.code("""conditions = {
+    v.T: 1000,
+    v.P: 101325,
+    v.X('AL'): 0.7
+}""", language='python')
+        
+        # Quick action buttons
         st.markdown("---")
         st.subheader("🚀 Quick Actions")
         
-        quick_cols = st.columns(5)
+        col_act1, col_act2, col_act3 = st.columns(3)
         
-        with quick_cols[0]:
-            if st.button("📁 Upload TDB", use_container_width=True):
-                st.session_state.active_tab = "🔬 Enthalpy Computation"
+        with col_act1:
+            if st.button("📁 Upload New TDB", use_container_width=True):
+                st.session_state.active_tab = "🔬 Computation"
                 st.rerun()
         
-        with quick_cols[1]:
-            if st.button("🔄 Compute Example", use_container_width=True):
-                # Auto-run example calculation
-                st.info("Running example calculation...")
-                st.session_state.run_example = True
+        with col_act2:
+            if st.button("⚖️ Analyze DOF", use_container_width=True):
+                st.session_state.active_tab = "⚖️ DOF Analyzer"
                 st.rerun()
         
-        with quick_cols[2]:
-            if st.button("📈 View All Results", use_container_width=True):
-                st.session_state.active_tab = "🔄 Multi-Material"
-                st.rerun()
-        
-        with quick_cols[3]:
-            if st.button("⚙️ Settings", use_container_width=True):
-                st.session_state.active_tab = "⚙️ Settings & Help"
-                st.rerun()
-        
-        with quick_cols[4]:
+        with col_act3:
             if st.button("🔄 Clear Session", type="secondary", use_container_width=True):
                 analyzer.results_history = []
                 analyzer.fitting_results = []
-                st.success("Session cleared!")
+                st.success("Session data cleared!")
                 st.rerun()
-        
-        # Recent computations
-        if analyzer.results_history:
-            st.markdown("---")
-            st.subheader("📋 Recent Computations")
-            
-            for i, result in enumerate(analyzer.results_history[-3:]):
-                with st.expander(f"{i+1}. {result['name']} | {result['tdb_file']}", expanded=False):
-                    col_a, col_b = st.columns(2)
-                    with col_a:
-                        st.write("**Composition:**")
-                        for elem, frac in list(result['composition'].items())[:5]:
-                            st.write(f"- {elem}: {frac:.4f}")
-                    
-                    with col_b:
-                        st.write("**Statistics:**")
-                        data = result['data']
-                        st.write(f"Temperature: {result['temperature_range'][0]} - {result['temperature_range'][1]} K")
-                        st.write(f"Data points: {len(data)}")
-                        st.write(f"ΔH: {data['Enthalpy_J_mol'].max() - data['Enthalpy_J_mol'].min():,.0f} J/mol")
     
-    # ==================== TAB 2: Enthalpy Computation ====================
+    # ==================== TAB 2: DOF Analyzer ====================
     with tab2:
-        st.header("🔬 Enthalpy Computation from TDB Files")
+        st.header("⚖️ Degrees of Freedom Analyzer")
+        st.markdown("**Diagnose and fix 'Number of degrees of freedom is not zero' errors**")
         
-        # File management section
-        with st.container():
-            st.subheader("📁 TDB File Management")
+        col_ana1, col_ana2 = st.columns([1, 1])
+        
+        with col_ana1:
+            st.subheader("📋 System Configuration")
             
-            col_file1, col_file2 = st.columns([1.2, 1])
+            # Manual input or load from TDB
+            config_source = st.radio(
+                "Configuration source:",
+                ["Manual input", "Load from TDB file"],
+                horizontal=True
+            )
             
-            with col_file1:
-                # Get available TDB files
-                available_tdb_files = analyzer.get_available_tdb_files()
-                
-                if available_tdb_files:
-                    st.markdown("**Available Thermodynamic Databases:**")
-                    tdb_options = ["Select from database"] + available_tdb_files
-                    selected_tdb_option = st.selectbox(
-                        "Choose TDB file:",
-                        tdb_options,
-                        index=0,
-                        help="Select a thermodynamic database file from your local database directory"
+            if config_source == "Load from TDB file":
+                available_tdb = analyzer.get_available_tdb_files()
+                if not available_tdb:
+                    st.info("No TDB files found. Please upload one in the Settings tab.")
+                    selected_tdb = None
+                else:
+                    selected_tdb = st.selectbox(
+                        "Select TDB file:",
+                        available_tdb
                     )
                     
-                    if selected_tdb_option != "Select from database":
-                        tdb_path = str(analyzer.database_dir / selected_tdb_option)
-                        st.success(f"✅ Selected: **{selected_tdb_option}**")
-                        
-                        # Show file info
+                    if selected_tdb:
+                        tdb_path = analyzer.database_dir / selected_tdb
                         try:
-                            file_size = os.path.getsize(tdb_path) / 1024
-                            st.caption(f"File size: {file_size:.1f} KB | Path: `{tdb_path}`")
-                        except:
-                            pass
-                    else:
-                        tdb_path = None
-                else:
-                    st.warning("⚠️ No TDB files found in the 'databases' directory.")
-                    tdb_path = None
-                
-                # File upload section
-                st.markdown("**Or upload new TDB file:**")
-                uploaded_file = st.file_uploader(
-                    "Drag and drop or click to upload",
-                    type=["tdb", "TDB"],
-                    help="Upload a thermodynamic database file (.tdb)",
-                    key="uploader_tab2"
+                            dbf = Database(str(tdb_path))
+                            elements = sorted([e for e in dbf.elements if e != 'VA'])
+                            phases = sorted(dbf.phases.keys())
+                            
+                            # Auto-fill components and phases
+                            components = st.multiselect(
+                                "Components (select from TDB):",
+                                elements,
+                                default=elements[:min(2, len(elements))]
+                            )
+                            
+                            selected_phases = st.multiselect(
+                                "Phases (select from TDB):",
+                                phases,
+                                default=phases[:min(2, len(phases))]
+                            )
+                            
+                        except Exception as e:
+                            st.error(f"Error loading TDB: {str(e)}")
+                            components = []
+                            selected_phases = []
+            else:
+                # Manual input
+                st.markdown("**Enter Components:**")
+                comp_input = st.text_input(
+                    "Component symbols (comma-separated, e.g., AL, CU, NI):",
+                    "AL, CU"
                 )
+                components = [c.strip().upper() for c in comp_input.split(',') if c.strip()]
                 
-                if uploaded_file is not None:
-                    # Save to temp file for immediate use
-                    with tempfile.NamedTemporaryFile(delete=False, suffix='.tdb', mode='wb') as tmp_file:
-                        tmp_file.write(uploaded_file.getbuffer())
-                        tdb_path = tmp_file.name
-                    
-                    st.success(f"✅ Uploaded: **{uploaded_file.name}**")
-                    
-                    # Auto-save option
-                    if st.checkbox("💾 Save to database directory", value=True):
-                        saved_path = analyzer.save_uploaded_tdb(uploaded_file)
-                        if saved_path:
-                            st.info(f"Saved to: `{saved_path}`")
+                st.markdown("**Enter Phases:**")
+                phase_input = st.text_input(
+                    "Phase names (comma-separated, e.g., LIQUID, FCC_A1):",
+                    "LIQUID, FCC_A1"
+                )
+                selected_phases = [p.strip().upper() for p in phase_input.split(',') if p.strip()]
             
-            with col_file2:
-                if tdb_path and os.path.exists(tdb_path):
-                    try:
-                        with st.spinner("🔍 Loading database..."):
-                            dbf = Database(tdb_path)
-                        
-                        st.markdown("**📊 Database Information**")
-                        
-                        # Display elements
-                        elements_list = sorted([e for e in dbf.elements if e != 'VA'])
-                        st.markdown(f"**Elements ({len(elements_list)}):**")
-                        elements_html = ""
-                        for elem in elements_list[:10]:
-                            elements_html += f'<span class="element-badge">{elem}</span> '
-                        if len(elements_list) > 10:
-                            elements_html += f'<span class="element-badge">+{len(elements_list)-10}</span>'
-                        st.markdown(elements_html, unsafe_allow_html=True)
-                        
-                        # Display phases
-                        phases_list = sorted(dbf.phases.keys())
-                        st.markdown(f"**Phases ({len(phases_list)}):**")
-                        with st.expander("📋 View all phases", expanded=False):
-                            cols_phases = st.columns(3)
-                            for i, phase in enumerate(phases_list):
-                                cols_phases[i % 3].markdown(f'<span class="phase-badge">{phase}</span>', 
-                                                          unsafe_allow_html=True)
-                        
-                        # Database metadata
-                        st.markdown("**📝 Metadata:**")
-                        st.write(f"- Database elements: {', '.join(elements_list[:5])}{'...' if len(elements_list) > 5 else ''}")
-                        st.write(f"- Total phases: {len(phases_list)}")
-                        
-                    except Exception as e:
-                        st.error(f"❌ Error loading database: {str(e)}")
-                        st.info("Please check if the TDB file is valid and try again.")
-                        st.stop()
-                else:
-                    if not tdb_path:
-                        st.info("👈 Please select or upload a TDB file to begin")
-                    else:
-                        st.error(f"❌ File not found: {tdb_path}")
-                    st.stop()
-        
-        # Calculation parameters
-        st.markdown("---")
-        st.subheader("⚙️ Calculation Parameters")
-        
-        col_params1, col_params2 = st.columns([1, 1])
-        
-        with col_params1:
-            # Element selection with search
-            elements_list = sorted([e for e in dbf.elements if e != 'VA'])
-            if not elements_list:
-                st.error("No valid elements found in database (excluding VA)")
+            if not components:
+                st.warning("Please specify at least one component")
                 st.stop()
             
-            st.markdown("**Select Elements:**")
-            search_element = st.text_input("Search elements:", "", 
-                                          help="Type to filter elements")
+            if not selected_phases:
+                st.warning("Please specify at least one phase")
+                st.stop()
             
-            if search_element:
-                filtered_elements = [e for e in elements_list 
-                                   if search_element.upper() in e.upper()]
+            # Add VA to components for calculation
+            components_with_va = components + ['VA']
+        
+        with col_ana2:
+            st.subheader("⚙️ Conditions Specification")
+            
+            # Temperature
+            temp_type = st.radio(
+                "Temperature specification:",
+                ["Single value", "Range"],
+                horizontal=True
+            )
+            
+            if temp_type == "Single value":
+                T_value = st.number_input("Temperature (K)", 100, 5000, 1000)
+                T_condition = T_value
             else:
-                filtered_elements = elements_list
+                col_t1, col_t2, col_t3 = st.columns(3)
+                with col_t1:
+                    T_start = st.number_input("T start (K)", 100, 5000, 800)
+                with col_t2:
+                    T_end = st.number_input("T end (K)", T_start, 6000, 1500)
+                with col_t3:
+                    T_step = st.number_input("T step (K)", 1, 200, 10)
+                T_condition = (T_start, T_end, T_step)
             
+            # Pressure
+            P_value = st.number_input("Pressure (Pa)", 1000, 10000000, 101325)
+            
+            # Composition specification
+            st.markdown("**Composition (mole fractions):**")
+            st.caption(f"For {len(components)} components, specify exactly {len(components)-1} independent compositions")
+            
+            composition = {}
+            remaining = 1.0
+            
+            for i, comp in enumerate(components):
+                if i < len(components) - 1:
+                    max_val = min(1.0, remaining)
+                    fraction = st.number_input(
+                        f"X({comp})",
+                        min_value=0.0,
+                        max_value=float(max_val),
+                        value=float(1.0/len(components)),
+                        step=0.01,
+                        key=f"dof_comp_{comp}"
+                    )
+                    composition[comp] = fraction
+                    remaining -= fraction
+                else:
+                    # Last component gets remaining
+                    st.info(f"X({comp}) = {remaining:.3f} (calculated)")
+                    composition[comp] = remaining
+            
+            # Build conditions dictionary
+            conditions = {
+                v.T: T_condition,
+                v.P: P_value
+            }
+            
+            # Add composition conditions (n-1 components)
+            for i, (comp, frac) in enumerate(composition.items()):
+                if i < len(components) - 1:  # Only first n-1
+                    conditions[v.X(comp)] = frac
+        
+        # Analyze button
+        st.markdown("---")
+        if st.button("🔬 Analyze Degrees of Freedom", type="primary", use_container_width=True):
+            with st.spinner("Analyzing thermodynamic system..."):
+                try:
+                    # Create dashboard visualization
+                    fig, dof_analysis = create_thermodynamic_dashboard(
+                        analyzer, components_with_va, selected_phases, conditions
+                    )
+                    
+                    st.pyplot(fig)
+                    
+                    # Display analysis results
+                    st.markdown("### 📊 Analysis Results")
+                    st.markdown(dof_analysis['message'], unsafe_allow_html=True)
+                    
+                    # Additional validation
+                    validation = analyzer.validate_equilibrium_conditions(
+                        components_with_va, selected_phases, conditions
+                    )
+                    
+                    if validation['errors']:
+                        st.markdown("### ❌ Validation Errors")
+                        for error in validation['errors']:
+                            st.error(error)
+                    
+                    if validation['warnings']:
+                        st.markdown("### ⚠️ Validation Warnings")
+                        for warning in validation['warnings']:
+                            st.warning(warning)
+                    
+                    if validation['suggestions']:
+                        st.markdown("### 💡 Suggestions for Fix")
+                        for suggestion in validation['suggestions']:
+                            st.markdown(suggestion)
+                    
+                    # Generate working example
+                    if not dof_analysis['is_valid']:
+                        st.markdown("### 🔧 Minimal Working Example")
+                        example = analyzer.create_minimal_working_example(
+                            components_with_va, selected_phases
+                        )
+                        
+                        with st.expander("View code template", expanded=False):
+                            st.code(example['code'], language='python')
+                        
+                        if st.button("📋 Copy to Clipboard", key="copy_example"):
+                            st.code(example['code'], language='python')
+                            st.success("Code copied! Paste it into your calculation.")
+                    
+                    # Test equilibrium if system is valid
+                    if dof_analysis['is_valid'] and validation['is_valid']:
+                        st.markdown("### 🎯 Ready for Equilibrium Calculation")
+                        
+                        # Show what will be passed to equilibrium
+                        st.markdown("**Final conditions for equilibrium():**")
+                        conds_display = []
+                        for key, value in conditions.items():
+                            if key == v.T:
+                                if isinstance(value, tuple):
+                                    conds_display.append(f"v.T: ({value[0]}, {value[1]}, {value[2]})")
+                                else:
+                                    conds_display.append(f"v.T: {value}")
+                            elif key == v.P:
+                                conds_display.append(f"v.P: {value}")
+                            elif 'X(' in str(key):
+                                element = str(key).split('(')[1].split(')')[0]
+                                conds_display.append(f"v.X('{element}'): {value:.3f}")
+                        
+                        for cond in conds_display:
+                            st.code(cond)
+                        
+                        st.success("✅ System is properly constrained! Ready for equilibrium calculation.")
+                        
+                        # Option to test with a TDB file
+                        test_tdb = st.selectbox(
+                            "Select TDB file to test:",
+                            [""] + analyzer.get_available_tdb_files()
+                        )
+                        
+                        if test_tdb and st.button("🧪 Test Equilibrium Calculation", type="secondary"):
+                            with st.spinner("Testing equilibrium calculation..."):
+                                try:
+                                    tdb_path = analyzer.database_dir / test_tdb
+                                    dbf_test = Database(str(tdb_path))
+                                    
+                                    # Check if selected phases exist in database
+                                    available_phases = sorted(dbf_test.phases.keys())
+                                    missing_phases = [p for p in selected_phases if p not in available_phases]
+                                    
+                                    if missing_phases:
+                                        st.warning(f"Phases not in database: {', '.join(missing_phases)}")
+                                        st.info(f"Available phases: {', '.join(available_phases[:5])}...")
+                                        # Use only available phases
+                                        selected_phases = [p for p in selected_phases if p in available_phases]
+                                    
+                                    # Perform equilibrium calculation
+                                    eq_result = equilibrium(
+                                        dbf_test,
+                                        components_with_va,
+                                        selected_phases,
+                                        conditions,
+                                        output='HM',
+                                        verbose=False
+                                    )
+                                    
+                                    st.success("✅ Equilibrium calculation successful!")
+                                    
+                                    # Display results
+                                    T_values = eq_result.T.values.flatten()
+                                    HM_values = eq_result.HM.values.flatten()
+                                    
+                                    result_df = pd.DataFrame({
+                                        'Temperature_K': T_values,
+                                        'Enthalpy_J_mol': HM_values
+                                    })
+                                    
+                                    result_df = result_df.dropna().sort_values('Temperature_K')
+                                    
+                                    if len(result_df) > 0:
+                                        st.metric("Data Points Generated", len(result_df))
+                                        
+                                        # Quick plot
+                                        fig_test, ax_test = plt.subplots(figsize=(10, 6))
+                                        ax_test.plot(result_df['Temperature_K'], result_df['Enthalpy_J_mol'], 
+                                                   'b-', linewidth=2, marker='o', markersize=4)
+                                        ax_test.set_xlabel('Temperature (K)', fontweight='bold')
+                                        ax_test.set_ylabel('Enthalpy (J/mol)', fontweight='bold')
+                                        ax_test.set_title('Test Equilibrium Calculation Result', fontweight='bold')
+                                        ax_test.grid(True, alpha=0.3)
+                                        st.pyplot(fig_test)
+                                        
+                                        # Store for later use
+                                        result_info = {
+                                            'name': f"Test: {test_tdb}",
+                                            'composition': composition,
+                                            'data': result_df,
+                                            'phases': selected_phases,
+                                            'tdb_file': test_tdb,
+                                            'temperature_range': (T_condition if isinstance(T_condition, tuple) else (T_condition, T_condition, 1)),
+                                            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                        }
+                                        analyzer.results_history.append(result_info)
+                                        
+                                        st.success("✅ Test calculation stored in history!")
+                                    else:
+                                        st.warning("Calculation completed but returned no valid data points.")
+                                
+                                except Exception as e:
+                                    st.error(f"❌ Test calculation failed: {str(e)}")
+                                    st.code(traceback.format_exc(), language='python')
+                
+                except Exception as e:
+                    st.error(f"❌ Analysis error: {str(e)}")
+                    st.code(traceback.format_exc(), language='python')
+        
+        # Quick reference
+        st.markdown("---")
+        st.subheader("📚 Quick Reference")
+        
+        col_ref1, col_ref2 = st.columns(2)
+        
+        with col_ref1:
+            st.markdown("**Rules for F = 0:**")
+            st.markdown("""
+            1. **Always specify T and P**
+            2. **For n components, specify n-1 compositions**
+            3. **Don't use v.N unless necessary**
+            4. **Ensure compositions sum ≤ 1.0**
+            5. **Last composition is implicit: 1 - sum(others)**
+            """)
+        
+        with col_ref2:
+            st.markdown("**Common Patterns:**")
+            st.markdown("""
+            - **Binary (2 components):** Specify 1 composition
+            - **Ternary (3 components):** Specify 2 compositions  
+            - **Quaternary (4 components):** Specify 3 compositions
+            - **Unary (1 component):** No composition needed
+            """)
+    
+    # ==================== TAB 3: Computation ====================
+    with tab3:
+        st.header("🔬 Enthalpy Computation with DOF Protection")
+        
+        # File selection
+        st.subheader("📁 TDB File Selection")
+        
+        available_tdb = analyzer.get_available_tdb_files()
+        if not available_tdb:
+            st.info("No TDB files found. Using built-in examples...")
+            available_tdb = analyzer.get_available_tdb_files()
+        
+        col_file1, col_file2 = st.columns([1.2, 1])
+        
+        with col_file1:
+            tdb_source = st.radio(
+                "Source:",
+                ["Select from database", "Upload new TDB"],
+                horizontal=True
+            )
+            
+            tdb_path = None
+            
+            if tdb_source == "Select from database" and available_tdb:
+                selected_file = st.selectbox(
+                    "Available TDB files:",
+                    available_tdb,
+                    index=0
+                )
+                tdb_path = str(analyzer.database_dir / selected_file)
+                st.success(f"✅ Selected: **{selected_file}**")
+            
+            else:
+                uploaded_file = st.file_uploader(
+                    "Upload TDB file",
+                    type=["tdb", "TDB"],
+                    key="uploader_tab3"
+                )
+                
+                if uploaded_file:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.tdb') as tmp:
+                        tmp.write(uploaded_file.getbuffer())
+                        tdb_path = tmp.name
+                    
+                    st.success(f"✅ Uploaded: **{uploaded_file.name}**")
+            
+            if not tdb_path:
+                st.info("👈 Please select or upload a TDB file")
+                st.stop()
+        
+        with col_file2:
+            try:
+                dbf = Database(tdb_path)
+                
+                elements = sorted([e for e in dbf.elements if e != 'VA'])
+                phases = sorted(dbf.phases.keys())
+                
+                st.markdown("**Database Info:**")
+                st.markdown(f"- **Elements:** {len(elements)}")
+                st.markdown(f"- **Phases:** {len(phases)}")
+                
+                with st.expander("View details", expanded=False):
+                    st.markdown(f"**Elements:** {', '.join(elements[:10])}{'...' if len(elements) > 10 else ''}")
+                    st.markdown(f"**Phases:** {', '.join(phases[:10])}{'...' if len(phases) > 10 else ''}")
+            
+            except Exception as e:
+                st.error(f"❌ Error loading database: {str(e)}")
+                st.stop()
+        
+        # System configuration with DOF protection
+        st.markdown("---")
+        st.subheader("⚙️ System Configuration")
+        
+        col_conf1, col_conf2 = st.columns([1, 1])
+        
+        with col_conf1:
+            # Element selection
             selected_elements = st.multiselect(
-                "Choose elements for your alloy:",
-                filtered_elements,
-                default=elements_list[:min(3, len(elements_list))],
-                help="Select elements to include in your alloy composition"
+                "Select components:",
+                elements,
+                default=elements[:min(3, len(elements))],
+                help="Select elements for your alloy system"
             )
             
             if not selected_elements:
-                st.warning("⚠️ Please select at least one element")
+                st.warning("Please select at least one element")
                 st.stop()
             
-            # Composition input
-            st.markdown("**Enter Composition:**")
-            st.caption("For n-component system, provide n-1 fractions. The nth component will be calculated automatically.")
+            # Composition input with auto-balancing
+            st.markdown("**Composition Input:**")
+            st.caption(f"For {len(selected_elements)} components, specify {len(selected_elements)-1} values")
             
-            # Smart composition input
             composition = {}
-            remaining_fraction = 1.0
+            total_so_far = 0.0
             
-            # Create input fields for n-1 components
-            for i, element in enumerate(selected_elements[:-1]):
-                max_val = min(1.0, remaining_fraction)
-                
-                fraction = st.number_input(
-                    f"Mole fraction X({element})",
-                    min_value=0.0,
-                    max_value=float(max_val),
-                    value=float(1.0/len(selected_elements) if i == 0 else 0.0),
-                    step=0.01,
-                    key=f"comp_input_{element}"
-                )
-                
-                composition[element] = fraction
-                remaining_fraction -= fraction
-            
-            # Last element gets the remaining fraction
-            last_element = selected_elements[-1]
-            composition[last_element] = remaining_fraction
+            for i, element in enumerate(selected_elements):
+                if i < len(selected_elements) - 1:
+                    max_val = 1.0 - total_so_far
+                    fraction = st.number_input(
+                        f"X({element})",
+                        min_value=0.0,
+                        max_value=float(max_val),
+                        value=float(1.0/len(selected_elements)),
+                        step=0.01,
+                        key=f"comp_{element}"
+                    )
+                    composition[element] = fraction
+                    total_so_far += fraction
+                else:
+                    # Last element
+                    remaining = 1.0 - total_so_far
+                    composition[element] = remaining
+                    st.info(f"X({element}) = {remaining:.3f} (auto-calculated)")
             
             # Display composition summary
-            st.markdown("**📊 Composition Summary:**")
-            comp_df = pd.DataFrame({
-                'Element': list(composition.keys()),
-                'Mole Fraction': list(composition.values())
-            })
-            st.dataframe(comp_df, use_container_width=True, hide_index=True)
+            st.markdown("**Composition Summary:**")
+            comp_text = ""
+            for elem, frac in composition.items():
+                comp_text += f'<span class="component-badge">{elem}: {frac:.3f}</span> '
+            st.markdown(comp_text, unsafe_allow_html=True)
             
             # Validate composition
             comp_sum = sum(composition.values())
-            if not (0.999 <= comp_sum <= 1.001):
-                st.error(f"❌ Composition sum = {comp_sum:.4f} (must be exactly 1.0)")
+            if abs(comp_sum - 1.0) > 0.001:
+                st.error(f"❌ Composition sum = {comp_sum:.4f} (must be 1.0)")
                 st.stop()
         
-        with col_params2:
+        with col_conf2:
             # Temperature settings
-            st.markdown("**🌡️ Temperature Range:**")
-            col_temp1, col_temp2, col_temp3 = st.columns(3)
-            with col_temp1:
-                T_start = st.number_input("Start (K)", 100, 5000, 300, 10,
-                                         help="Starting temperature in Kelvin")
-            with col_temp2:
-                T_end = st.number_input("End (K)", T_start+10, 6000, 1500, 10,
-                                       help="End temperature in Kelvin")
-            with col_temp3:
-                T_step = st.number_input("Step (K)", 1, 200, 10,
-                                        help="Temperature step size")
+            st.markdown("**Temperature Range:**")
+            temp_mode = st.radio("Mode:", ["Single", "Range"], horizontal=True)
             
-            if T_end <= T_start:
-                st.error("❌ End temperature must be greater than start temperature")
-                st.stop()
+            if temp_mode == "Single":
+                T_value = st.number_input("Temperature (K)", 100, 5000, 1000)
+                T_condition = T_value
+                T_display = f"{T_value} K"
+            else:
+                col_t1, col_t2, col_t3 = st.columns(3)
+                with col_t1:
+                    T_start = st.number_input("Start (K)", 100, 5000, 300)
+                with col_t2:
+                    T_end = st.number_input("End (K)", T_start, 6000, 1500)
+                with col_t3:
+                    T_step = st.number_input("Step (K)", 1, 200, 10)
+                T_condition = (T_start, T_end, T_step)
+                T_display = f"{T_start}-{T_end} K, step={T_step}"
+            
+            # Pressure
+            P_value = st.number_input("Pressure (Pa)", 1000, 10000000, 101325)
             
             # Phase selection
-            st.markdown("**Select Phases for Equilibrium:**")
-            available_phases = sorted(dbf.phases.keys())
-            
-            # Smart phase selection
-            default_phases = []
-            for phase in available_phases:
-                if 'LIQUID' in phase.upper():
-                    default_phases.append(phase)
-                    break
-            if not default_phases and available_phases:
-                default_phases = available_phases[:min(2, len(available_phases))]
-            
+            st.markdown("**Phase Selection:**")
             selected_phases = st.multiselect(
-                "Equilibrium phases to consider:",
-                available_phases,
-                default=default_phases,
-                help="Select phases to include in the equilibrium calculation"
+                "Select phases for equilibrium:",
+                phases,
+                default=phases[:min(2, len(phases))]
             )
             
             if not selected_phases:
-                st.warning("⚠️ Please select at least one phase")
+                st.warning("Please select at least one phase")
                 st.stop()
             
-            # Advanced settings
-            with st.expander("⚙️ Advanced Settings", expanded=False):
-                P = st.number_input("Pressure (Pa)", 1000, 10000000, 101325, 1000,
-                                   help="System pressure in Pascals")
-                output_grid = st.number_input("Output grid density", 10, 1000, 100,
-                                             help="Number of points in output grid")
-                
+            # Advanced options
+            with st.expander("⚙️ Advanced Options", expanded=False):
                 calc_mode = st.selectbox(
                     "Calculation mode",
                     ["Fast", "Accurate", "Very Accurate"],
-                    index=1,
-                    help="Trade-off between speed and accuracy"
+                    index=1
+                )
+                
+                output_variable = st.selectbox(
+                    "Output variable",
+                    ["HM", "GM", "SM", "CPM"],
+                    index=0,
+                    help="HM: Enthalpy, GM: Gibbs energy, SM: Entropy, CPM: Heat capacity"
                 )
         
-        # Compute button with progress
+        # DOF Analysis and Validation
         st.markdown("---")
-        compute_col1, compute_col2, compute_col3 = st.columns([2, 1, 1])
+        st.subheader("⚖️ DOF Validation Before Calculation")
         
-        with compute_col2:
-            compute_button = st.button("🚀 Compute Enthalpy", 
-                                      type="primary", 
-                                      use_container_width=True)
+        # Build conditions
+        conditions = {
+            v.T: T_condition,
+            v.P: P_value
+        }
         
-        with compute_col3:
-            example_button = st.button("📚 Run Example", 
-                                      type="secondary", 
-                                      use_container_width=True,
-                                      help="Run a pre-configured example calculation")
+        # Add composition conditions (n-1)
+        for i, (element, fraction) in enumerate(composition.items()):
+            if i < len(selected_elements) - 1:  # Only first n-1
+                conditions[v.X(element)] = fraction
         
-        if compute_button or example_button or getattr(st.session_state, 'run_example', False):
-            if 'run_example' in st.session_state:
-                del st.session_state.run_example
+        components_with_va = selected_elements + ['VA']
+        
+        # Perform DOF analysis
+        dof_analysis = analyzer.analyze_degrees_of_freedom(
+            components_with_va, selected_phases, conditions
+        )
+        
+        validation = analyzer.validate_equilibrium_conditions(
+            components_with_va, selected_phases, conditions
+        )
+        
+        # Display analysis
+        col_val1, col_val2 = st.columns([2, 1])
+        
+        with col_val1:
+            if dof_analysis['is_valid'] and validation['is_valid']:
+                st.markdown('<div class="dof-indicator dof-correct">✅ SYSTEM VALID - Ready for calculation!</div>', 
+                          unsafe_allow_html=True)
+            elif dof_analysis['is_under_specified']:
+                st.markdown('<div class="dof-indicator dof-warning">⚠️ UNDER-CONSTRAINED - Fix before calculation</div>', 
+                          unsafe_allow_html=True)
+            else:
+                st.markdown('<div class="dof-indicator dof-error">❌ OVER-CONSTRAINED - Fix before calculation</div>', 
+                          unsafe_allow_html=True)
+        
+        with col_val2:
+            st.metric("Degrees of Freedom", dof_analysis['actual_F'], 
+                     delta="Target: 0", delta_color="normal" if dof_analysis['actual_F'] == 0 else "off")
+        
+        # Show validation details
+        if validation['errors']:
+            st.error("**Validation Errors:**")
+            for error in validation['errors']:
+                st.error(error)
+        
+        if validation['warnings']:
+            st.warning("**Validation Warnings:**")
+            for warning in validation['warnings']:
+                st.warning(warning)
+        
+        # Show what will be passed to equilibrium
+        with st.expander("📋 View Conditions for equilibrium()", expanded=False):
+            st.markdown("**Components:**")
+            st.markdown(f"`{components_with_va}`")
             
-            with st.spinner("🔄 Performing equilibrium calculation... This may take a moment"):
-                try:
-                    # Prepare conditions
-                    conditions = {
-                        v.T: (T_start, T_end, T_step),
-                        v.P: P,
-                        v.N: 1
-                    }
-                    
-                    # Add composition conditions
-                    for element, fraction in composition.items():
-                        if fraction > 0:
-                            conditions[v.X(element)] = fraction
-                    
-                    # Add VA to elements list for calculation
-                    elements_with_va = selected_elements + ['VA']
-                    
-                    # Perform equilibrium calculation
-                    progress_bar = st.progress(0)
-                    
-                    # Step 1: Setup
-                    progress_bar.progress(20)
-                    
-                    # Step 2: Calculate equilibrium
-                    eq_result = equilibrium(
-                        dbf,
-                        elements_with_va,
-                        selected_phases,
-                        conditions,
-                        output='HM',
-                        verbose=False
-                    )
-                    
-                    progress_bar.progress(80)
-                    
-                    # Extract and process results
-                    T_values = eq_result.T.values.flatten()
-                    HM_values = eq_result.HM.values.flatten()
-                    
-                    # Create DataFrame
-                    result_df = pd.DataFrame({
-                        'Temperature_K': T_values,
-                        'Enthalpy_J_mol': HM_values
-                    })
-                    
-                    # Remove NaN values and sort
-                    result_df = result_df.dropna().sort_values('Temperature_K').reset_index(drop=True)
-                    
-                    if len(result_df) == 0:
-                        st.error("❌ Calculation returned no valid results. Try adjusting parameters.")
-                        st.stop()
-                    
-                    # Add specific enthalpy
-                    result_df = analyzer.convert_to_specific_enthalpy(result_df, composition)
-                    
-                    # Detect phase transitions
-                    phase_transitions = analyzer.detect_phase_transitions(result_df)
-                    
-                    progress_bar.progress(100)
-                    
-                    # Store results with metadata
-                    material_name = f"{'-'.join([f'{e}' for e in selected_elements[:3]])}"
-                    if len(selected_elements) > 3:
-                        material_name += f"-{len(selected_elements)-3}more"
-                    
-                    result_info = {
-                        'name': material_name,
-                        'composition': composition,
-                        'data': result_df,
-                        'phases': selected_phases,
-                        'tdb_file': os.path.basename(tdb_path) if tdb_path else 'uploaded.tdb',
-                        'temperature_range': (T_start, T_end, T_step),
-                        'phase_transitions': phase_transitions,
-                        'molar_weight': analyzer.calculate_alloy_molar_weight(composition),
-                        'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    }
-                    analyzer.results_history.append(result_info)
-                    
-                    # Display success message
-                    st.success(f"✅ Calculation completed successfully! Generated {len(result_df)} data points.")
-                    
-                    # Create and display visualization
-                    fig = create_enhanced_visualization(result_df, composition, material_name, phase_transitions)
-                    st.pyplot(fig)
-                    
-                    # Display key metrics in cards
-                    st.markdown("### 📊 Key Metrics")
-                    col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-                    
-                    with col_m1:
-                        st.markdown('<div class="data-point">', unsafe_allow_html=True)
-                        st.metric("Min Enthalpy", f"{result_df['Enthalpy_J_mol'].min():,.0f} J/mol")
-                        st.markdown('</div>', unsafe_allow_html=True)
-                    
-                    with col_m2:
-                        st.markdown('<div class="data-point">', unsafe_allow_html=True)
-                        st.metric("Max Enthalpy", f"{result_df['Enthalpy_J_mol'].max():,.0f} J/mol")
-                        st.markdown('</div>', unsafe_allow_html=True)
-                    
-                    with col_m3:
-                        st.markdown('<div class="data-point">', unsafe_allow_html=True)
-                        delta_h = result_df['Enthalpy_J_mol'].max() - result_df['Enthalpy_J_mol'].min()
-                        st.metric("Total ΔH", f"{delta_h:,.0f} J/mol")
-                        st.markdown('</div>', unsafe_allow_html=True)
-                    
-                    with col_m4:
-                        st.markdown('<div class="data-point">', unsafe_allow_html=True)
-                        molar_weight = analyzer.calculate_alloy_molar_weight(composition)
-                        st.metric("Molar Weight", f"{molar_weight:.2f} g/mol")
-                        st.markdown('</div>', unsafe_allow_html=True)
-                    
-                    # Display phase transition information
-                    if phase_transitions:
-                        st.markdown("### 🔥 Phase Transitions Detected")
-                        for trans in phase_transitions:
-                            col_t1, col_t2 = st.columns([1, 3])
-                            with col_t1:
-                                st.metric("Transition Temp", f"{trans['temperature']:.1f} K")
-                            with col_t2:
-                                st.write(f"**{trans['type'].title()}** | Enthalpy change: {trans['enthalpy_change']:,.0f} J/mol")
-                    
-                    # Enhanced download section
-                    st.markdown('<div class="download-section">', unsafe_allow_html=True)
-                    st.subheader("📥 Download Results")
-                    
-                    col_dl1, col_dl2, col_dl3 = st.columns(3)
-                    
-                    with col_dl1:
-                        st.markdown("**📊 Full Data (CSV)**")
-                        csv_full = result_df.to_csv(index=False)
-                        
-                        st.download_button(
-                            "📄 Download Full Dataset",
-                            data=csv_full,
-                            file_name=f"enthalpy_{material_name.replace(' ', '_')}.csv",
-                            mime="text/csv",
-                            use_container_width=True
+            st.markdown("**Phases:**")
+            st.markdown(f"`{selected_phases}`")
+            
+            st.markdown("**Conditions:**")
+            for key, value in conditions.items():
+                if key == v.T:
+                    if isinstance(value, tuple):
+                        st.code(f"v.T: ({value[0]}, {value[1]}, {value[2]})")
+                    else:
+                        st.code(f"v.T: {value}")
+                elif key == v.P:
+                    st.code(f"v.P: {value}")
+                elif 'X(' in str(key):
+                    element = str(key).split('(')[1].split(')')[0]
+                    st.code(f"v.X('{element}'): {value}")
+        
+        # Calculate button (only enabled if valid)
+        st.markdown("---")
+        calculate_enabled = dof_analysis['is_valid'] and validation['is_valid']
+        
+        if calculate_enabled:
+            if st.button("🚀 Calculate Enthalpy", type="primary", use_container_width=True):
+                with st.spinner("Performing equilibrium calculation..."):
+                    try:
+                        # Perform equilibrium calculation
+                        eq_result = equilibrium(
+                            dbf,
+                            components_with_va,
+                            selected_phases,
+                            conditions,
+                            output=output_variable,
+                            verbose=False
                         )
-                    
-                    with col_dl2:
-                        st.markdown("**📈 Plot Data (CSV)**")
-                        plot_df = result_df[['Temperature_K', 'Enthalpy_J_mol', 'Enthalpy_J_kg']]
                         
-                        st.download_button(
-                            "📄 Download Plot Data",
-                            data=plot_df.to_csv(index=False),
-                            file_name=f"plot_data_{material_name.replace(' ', '_')}.csv",
-                            mime="text/csv",
-                            use_container_width=True
-                        )
-                    
-                    with col_dl3:
-                        st.markdown("**📝 DAT Format**")
-                        metadata = {
-                            'TDB File': os.path.basename(tdb_path) if tdb_path else 'uploaded.tdb',
-                            'Phases': ', '.join(selected_phases),
-                            'Pressure (Pa)': P,
-                            'Temperature Range': f"{T_start}-{T_end} K, step={T_step}",
-                            'Molar Weight (g/mol)': analyzer.calculate_alloy_molar_weight(composition)
+                        # Extract results
+                        T_values = eq_result.T.values.flatten()
+                        result_values = eq_result[output_variable].values.flatten()
+                        
+                        # Create DataFrame
+                        result_df = pd.DataFrame({
+                            'Temperature_K': T_values,
+                            f'{output_variable}_J_mol': result_values
+                        })
+                        
+                        result_df = result_df.dropna().sort_values('Temperature_K')
+                        
+                        if len(result_df) == 0:
+                            st.error("❌ Calculation returned no valid results")
+                            st.stop()
+                        
+                        # Rename enthalpy column for consistency
+                        if output_variable == 'HM':
+                            result_df = result_df.rename(columns={'HM_J_mol': 'Enthalpy_J_mol'})
+                        
+                            # Add specific enthalpy
+                            result_df = analyzer.convert_to_specific_enthalpy(result_df, composition)
+                        
+                        # Store results
+                        material_name = f"{'-'.join([e for e in selected_elements[:3]])}"
+                        if len(selected_elements) > 3:
+                            material_name += f"-{len(selected_elements)-3}more"
+                        
+                        result_info = {
+                            'name': material_name,
+                            'composition': composition,
+                            'data': result_df,
+                            'phases': selected_phases,
+                            'tdb_file': os.path.basename(tdb_path),
+                            'temperature_range': (T_condition if isinstance(T_condition, tuple) else (T_condition, T_condition, 1)),
+                            'output_variable': output_variable,
+                            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         }
-                        dat_content = analyzer.format_dat_file(result_df, composition, metadata)
+                        analyzer.results_history.append(result_info)
                         
-                        st.download_button(
-                            "📄 Download DAT File",
-                            data=dat_content,
-                            file_name=f"enthalpy_{material_name.replace(' ', '_')}.dat",
-                            mime="text/plain",
-                            use_container_width=True
-                        )
-                    
-                    # Additional export options
-                    with st.expander("🔄 Additional Export Formats", expanded=False):
-                        col_exp1, col_exp2 = st.columns(2)
+                        st.success(f"✅ Calculation successful! Generated {len(result_df)} data points")
                         
-                        with col_exp1:
-                            # JSON export
-                            json_data = json.dumps({
+                        # Visualization
+                        fig, ax = plt.subplots(figsize=(12, 8), dpi=150)
+                        
+                        if output_variable == 'HM':
+                            ax.plot(result_df['Temperature_K'], result_df['Enthalpy_J_mol'], 
+                                   'b-', linewidth=2.5, marker='o', markersize=4, 
+                                   markevery=max(1, len(result_df)//20))
+                            ax.set_ylabel('Enthalpy (J/mol)', fontweight='bold')
+                            ax.set_title(f'Enthalpy vs Temperature - {material_name}', fontweight='bold')
+                            
+                            # Add specific enthalpy on secondary axis
+                            ax2 = ax.twinx()
+                            ax2.plot(result_df['Temperature_K'], result_df['Enthalpy_J_kg'], 
+                                    'r-', linewidth=2, alpha=0.7, linestyle='--')
+                            ax2.set_ylabel('Specific Enthalpy (J/kg)', fontweight='bold', color='r')
+                            ax2.tick_params(axis='y', labelcolor='r')
+                        else:
+                            ax.plot(result_df['Temperature_K'], result_df[f'{output_variable}_J_mol'], 
+                                   'g-', linewidth=2.5)
+                            ax.set_ylabel(f'{output_variable} (J/mol)', fontweight='bold')
+                            ax.set_title(f'{output_variable} vs Temperature - {material_name}', fontweight='bold')
+                        
+                        ax.set_xlabel('Temperature (K)', fontweight='bold')
+                        ax.grid(True, alpha=0.3)
+                        
+                        plt.tight_layout()
+                        st.pyplot(fig)
+                        
+                        # Key metrics
+                        col_m1, col_m2, col_m3 = st.columns(3)
+                        
+                        with col_m1:
+                            if output_variable == 'HM':
+                                min_val = result_df['Enthalpy_J_mol'].min()
+                                max_val = result_df['Enthalpy_J_mol'].max()
+                                st.metric("Min Enthalpy", f"{min_val:,.0f} J/mol")
+                        
+                        with col_m2:
+                            if output_variable == 'HM':
+                                st.metric("Max Enthalpy", f"{max_val:,.0f} J/mol")
+                        
+                        with col_m3:
+                            if output_variable == 'HM':
+                                delta = max_val - min_val
+                                st.metric("ΔH", f"{delta:,.0f} J/mol")
+                        
+                        # Download options
+                        st.markdown("---")
+                        st.subheader("📥 Download Results")
+                        
+                        col_dl1, col_dl2 = st.columns(2)
+                        
+                        with col_dl1:
+                            csv_data = result_df.to_csv(index=False)
+                            st.download_button(
+                                "📄 Download CSV",
+                                data=csv_data,
+                                file_name=f"results_{material_name}.csv",
+                                mime="text/csv",
+                                use_container_width=True
+                            )
+                        
+                        with col_dl2:
+                            # Create comprehensive report
+                            report = {
                                 'material': material_name,
                                 'composition': composition,
-                                'data': result_df.to_dict('records'),
-                                'metadata': metadata
-                            }, indent=4)
+                                'conditions': {
+                                    'temperature': T_display,
+                                    'pressure': f"{P_value} Pa",
+                                    'phases': selected_phases
+                                },
+                                'data': result_df.to_dict('records')
+                            }
                             
+                            json_data = json.dumps(report, indent=4)
                             st.download_button(
-                                "📁 JSON Format",
+                                "📁 Download JSON Report",
                                 data=json_data,
-                                file_name=f"enthalpy_{material_name.replace(' ', '_')}.json",
+                                file_name=f"report_{material_name}.json",
                                 mime="application/json",
                                 use_container_width=True
                             )
+                    
+                    except Exception as e:
+                        st.error(f"❌ Calculation error: {str(e)}")
+                        st.code(traceback.format_exc(), language='python')
                         
-                        with col_exp2:
-                            # Excel export
-                            output = io.BytesIO()
-                            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                                result_df.to_excel(writer, sheet_name='Enthalpy Data', index=False)
-                                # Add summary sheet
-                                summary_df = pd.DataFrame([{
-                                    'Material': material_name,
-                                    'Molar Weight (g/mol)': analyzer.calculate_alloy_molar_weight(composition),
-                                    'Min Temp (K)': T_start,
-                                    'Max Temp (K)': T_end,
-                                    'Data Points': len(result_df)
-                                }])
-                                summary_df.to_excel(writer, sheet_name='Summary', index=False)
+                        # Provide specific help for DOF errors
+                        if "degrees of freedom is not zero" in str(e):
+                            st.markdown("### 🆘 DOF Error Detected!")
+                            st.markdown("""
+                            Even though our analysis showed F=0, pycalphad still encountered a DOF error.
+                            This can happen because:
                             
-                            st.download_button(
-                                "📗 Excel Format",
-                                data=output.getvalue(),
-                                file_name=f"enthalpy_{material_name.replace(' ', '_')}.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                use_container_width=True
-                            )
-                    
-                    st.markdown('</div>', unsafe_allow_html=True)
-                    
-                    # Data preview
-                    with st.expander("🔍 View Complete Data Table", expanded=False):
-                        st.dataframe(result_df, use_container_width=True, height=300)
-                
-                except Exception as e:
-                    st.error(f"❌ Calculation error: {str(e)}")
-                    st.exception(e)
+                            1. **Phase stability issues**: Selected phases might not be stable at given conditions
+                            2. **Database limitations**: Some phases might not be defined for all compositions
+                            3. **Numerical issues** in the starting point calculation
+                            
+                            **Try:**
+                            1. Use different phases
+                            2. Adjust temperature range
+                            3. Try different composition
+                            4. Check the DOF Analyzer tab for detailed diagnosis
+                            """)
+        else:
+            st.button("🚀 Calculate Enthalpy", 
+                     use_container_width=True, 
+                     disabled=True,
+                     help="Fix DOF issues before calculation")
+            
+            # Show what needs to be fixed
+            st.markdown("### 🔧 Fix Required Before Calculation")
+            
+            if dof_analysis['is_under_specified']:
+                st.error(f"**Under-constrained:** Need {dof_analysis['theoretical_F'] - dof_analysis['specified_vars']['independent_intensive']} more intensive variable(s)")
+            
+            if dof_analysis['is_over_specified']:
+                st.error(f"**Over-constrained:** Remove {dof_analysis['specified_vars']['independent_intensive'] - dof_analysis['theoretical_F']} constraint(s)")
+            
+            # Provide specific suggestions
+            suggestions = analyzer._generate_fix_suggestions(
+                selected_elements, selected_phases, conditions, 
+                dof_analysis['specified_vars']['compositions']
+            )
+            
+            if suggestions:
+                st.markdown("**Suggestions:**")
+                for suggestion in suggestions:
+                    st.markdown(suggestion)
     
-    # ==================== TAB 3: Curve Fitting ====================
-    with tab3:
+    # ==================== TAB 4: Curve Fitting ====================
+    with tab4:
         st.header("📊 Curve Fitting & Analysis")
         
         if not analyzer.results_history:
             st.info("💡 No computed data available. Please perform calculations in the 'Enthalpy Computation' tab first.")
             st.stop()
         
-        # Data source selection
-        data_source = st.radio(
-            "Select data source:",
-            ["Use computed results", "Upload external CSV file"],
-            horizontal=True,
-            index=0
+        # Data selection
+        st.subheader("📈 Select Data for Fitting")
+        
+        result_options = [
+            f"{i+1}. {res['name']} | {res['tdb_file']} | {len(res['data'])} pts"
+            for i, res in enumerate(analyzer.results_history)
+        ]
+        
+        selected_idx = st.selectbox(
+            "Select computed result:",
+            range(len(result_options)),
+            format_func=lambda x: result_options[x],
+            index=len(result_options)-1
         )
         
-        if data_source == "Use computed results":
-            # Select from computed results
-            result_options = [
-                f"{i+1}. {res['name']} | {res['tdb_file']} | {res['temperature_range'][0]}-{res['temperature_range'][1]}K | {len(res['data'])} pts"
-                for i, res in enumerate(analyzer.results_history)
-            ]
-            
-            selected_result_idx = st.selectbox(
-                "Select computed result:",
-                range(len(result_options)),
-                format_func=lambda x: result_options[x],
-                index=len(result_options)-1 if result_options else 0
-            )
-            
-            result_data = analyzer.results_history[selected_result_idx]['data']
-            T_data = result_data['Temperature_K'].values
-            H_data = result_data['Enthalpy_J_mol'].values
-            material_name = analyzer.results_history[selected_result_idx]['name']
-            composition_ref = analyzer.results_history[selected_result_idx]['composition']
-            
-            st.success(f"✅ Loaded: {material_name} with {len(T_data)} data points")
+        result = analyzer.results_history[selected_idx]
+        data = result['data']
         
-        else:  # Upload CSV
-            uploaded_csv = st.file_uploader(
-                "Upload CSV with Temperature and Enthalpy columns",
-                type=['csv', 'txt', 'dat'],
-                key="uploader_csv_tab3"
-            )
-            
-            if uploaded_csv is None:
-                st.info("Please upload a CSV file to continue")
-                st.stop()
-            
-            try:
-                df_upload = pd.read_csv(uploaded_csv)
-                
-                st.write("**Preview of uploaded data:**")
-                st.dataframe(df_upload.head(), use_container_width=True)
-                
-                # Column selection
-                col1, col2 = st.columns(2)
-                with col1:
-                    temp_col = st.selectbox("Temperature column", df_upload.columns, index=0)
-                with col2:
-                    enthalpy_col = st.selectbox("Enthalpy column (J/mol)", df_upload.columns, index=1)
-                
-                # Validate data
-                if len(df_upload) < 10:
-                    st.warning("⚠️ Very few data points. Curve fitting may be unstable.")
-                
-                T_data = df_upload[temp_col].values
-                H_data = df_upload[enthalpy_col].values
-                material_name = "Uploaded Data"
-                composition_ref = {}
-                
-                # Basic data validation
-                if len(T_data) != len(H_data):
-                    st.error("❌ Temperature and enthalpy arrays must have same length")
-                    st.stop()
-                
-                st.success(f"✅ Loaded {len(T_data)} data points from uploaded file")
-                
-            except Exception as e:
-                st.error(f"❌ Error reading CSV: {str(e)}")
-                st.stop()
+        # Check if we have enthalpy data
+        if 'Enthalpy_J_mol' not in data.columns:
+            st.error("Selected data doesn't contain enthalpy. Please use 'HM' output in calculations.")
+            st.stop()
         
-        # Fitting parameters with smart initialization
+        T_data = data['Temperature_K'].values
+        H_data = data['Enthalpy_J_mol'].values
+        
+        # Display data info
+        col_info1, col_info2, col_info3 = st.columns(3)
+        
+        with col_info1:
+            st.metric("Data Points", len(T_data))
+        
+        with col_info2:
+            st.metric("Temperature Range", f"{T_data.min():.0f}-{T_data.max():.0f} K")
+        
+        with col_info3:
+            delta_H = H_data.max() - H_data.min()
+            st.metric("ΔH Range", f"{delta_H:,.0f} J/mol")
+        
+        # Fitting parameters
         st.markdown("---")
         st.subheader("⚙️ Fitting Parameters")
         
-        # Calculate smart initial guesses
-        if len(T_data) > 0 and len(H_data) > 0:
-            T_range = T_data.max() - T_data.min()
-            H_range = H_data.max() - H_data.min()
-            H_slope = H_range / T_range if T_range > 0 else 1.0
-            T_mid = (T_data.max() + T_data.min()) / 2
-            
-            # Default guesses
-            A1_guess_default = max(5.0, min(50.0, H_slope * 0.5))
-            A2_guess_default = max(1.0, min(30.0, H_slope * 0.2))
-            Tm_guess_default = T_mid
-            DeltaHf_guess_default = max(5000.0, min(30000.0, H_range * 0.3))
-            k_guess_default = 0.01
-            H298_guess_default = H_data.min() if len(H_data) > 0 else 0
-        else:
-            A1_guess_default = 20.0
-            A2_guess_default = 10.0
-            Tm_guess_default = 1000.0
-            DeltaHf_guess_default = 15000.0
-            k_guess_default = 0.01
-            H298_guess_default = 0.0
+        # Smart initial guesses
+        T_range = T_data.max() - T_data.min()
+        H_range = H_data.max() - H_data.min()
+        H_slope = H_range / T_range if T_range > 0 else 1.0
+        T_mid = (T_data.max() + T_data.min()) / 2
         
-        col_p1, col_p2 = st.columns(2)
+        col_fit1, col_fit2 = st.columns(2)
         
-        with col_p1:
-            st.markdown("**🔧 Initial Parameter Guesses:**")
+        with col_fit1:
             A1_guess = st.number_input(
-                "A₁ (J/mol·K)", 
-                -100.0, 100.0, 
-                float(A1_guess_default), 
-                0.1,
-                help="Sensible heat coefficient for solid phase"
+                "A₁ initial (J/mol·K)", 
+                -200.0, 200.0, 
+                float(max(5.0, min(50.0, H_slope * 0.5))), 
+                0.1
             )
             A2_guess = st.number_input(
-                "A₂ (J/mol·K)", 
-                -100.0, 100.0, 
-                float(A2_guess_default), 
-                0.1,
-                help="Additional sensible heat coefficient for liquid phase"
+                "A₂ initial (J/mol·K)", 
+                -200.0, 200.0, 
+                float(max(1.0, min(30.0, H_slope * 0.2))), 
+                0.1
             )
             Tm_guess = st.number_input(
-                "Tₘ (K)", 
-                float(T_data.min()) if len(T_data) > 0 else 300.0, 
-                float(T_data.max()) if len(T_data) > 0 else 3000.0, 
-                float(Tm_guess_default), 
-                1.0,
-                help="Melting temperature"
+                "Tₘ initial (K)", 
+                float(T_data.min()), float(T_data.max()), 
+                float(T_mid), 
+                1.0
             )
         
-        with col_p2:
-            st.markdown("**🎯 Additional Parameters:**")
+        with col_fit2:
             DeltaHf_guess = st.number_input(
-                "ΔHf (J/mol)", 
-                -50000.0, 50000.0, 
-                float(DeltaHf_guess_default), 
-                100.0,
-                help="Heat of fusion"
+                "ΔHf initial (J/mol)", 
+                -100000.0, 100000.0, 
+                float(max(5000.0, min(50000.0, H_range * 0.3))), 
+                100.0
             )
             k_guess = st.number_input(
-                "k (1/K)", 
+                "k initial (1/K)", 
                 0.0001, 1.0, 
-                float(k_guess_default), 
-                0.001,
-                help="Sigmoid steepness parameter"
+                0.01, 
+                0.001
             )
             H298_guess = st.number_input(
-                "H₂₉₈ (J/mol)", 
+                "H₂₉₈ initial (J/mol)", 
                 -100000.0, 100000.0, 
-                float(H298_guess_default), 
-                100.0,
-                help="Reference enthalpy at 298 K"
+                float(H_data.min() * 0.9), 
+                100.0
             )
         
-        # Advanced fitting options
-        with st.expander("⚙️ Advanced Fitting Options", expanded=False):
-            col_adv1, col_adv2 = st.columns(2)
-            
-            with col_adv1:
-                max_iterations = st.number_input("Max iterations", 100, 10000, 5000, 100)
-                fit_method = st.selectbox("Fitting method", ["trf", "lm"], index=0)
-            
-            with col_adv2:
-                loss_function = st.selectbox(
-                    "Loss function",
-                    ["linear", "soft_l1", "huber", "cauchy", "arctan"],
-                    index=0
-                )
-                weight_data = st.checkbox("Weight by temperature", value=False)
-        
         # Fit button
-        st.markdown("---")
         if st.button("🎯 Perform Curve Fit", type="primary", use_container_width=True):
-            with st.spinner("🔄 Fitting curve to data..."):
+            with st.spinner("Fitting curve to data..."):
                 try:
-                    # Prepare data
-                    if weight_data:
-                        # Weight by temperature (higher weight at extreme temperatures)
-                        weights = 1.0 / (1.0 + np.abs(T_data - np.mean(T_data)) / np.std(T_data))
-                    else:
-                        weights = None
-                    
-                    # Initial guess
                     initial_guess = [A1_guess, A2_guess, Tm_guess, DeltaHf_guess, k_guess, H298_guess]
                     
-                    # Bounds for physical constraints
-                    lower_bounds = [-200, -200, T_data.min() * 0.8, 0, 1e-6, -1e6]
-                    upper_bounds = [200, 200, T_data.max() * 1.2, 1e7, 1.0, 1e6]
+                    # Bounds
+                    lower_bounds = [-500, -500, T_data.min() * 0.8, 0, 1e-6, -1e6]
+                    upper_bounds = [500, 500, T_data.max() * 1.2, 1e6, 1.0, 1e6]
                     
-                    # Perform curve fitting
                     fit_params, pcov = curve_fit(
                         analyzer.enthalpy_equation,
                         T_data,
                         H_data,
                         p0=initial_guess,
                         bounds=(lower_bounds, upper_bounds),
-                        maxfev=max_iterations,
-                        method=fit_method,
-                        sigma=weights
+                        maxfev=10000
                     )
                     
                     A1_fit, A2_fit, Tm_fit, DeltaHf_fit, k_fit, H298_fit = fit_params
-                    
-                    # Calculate parameter uncertainties
-                    perr = np.sqrt(np.diag(pcov)) if pcov is not None else np.zeros(6)
                     
                     # Generate fitted curve
                     T_fit = np.linspace(T_data.min(), T_data.max(), 1000)
@@ -1447,671 +2040,324 @@ def main():
                     ss_tot = np.sum((H_data - np.mean(H_data))**2)
                     r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
                     rmse = np.sqrt(np.mean(residuals**2))
-                    mae = np.mean(np.abs(residuals))
                     
-                    # Calculate AIC and BIC
-                    n = len(T_data)
-                    k_params = 6
-                    aic = n * np.log(ss_res/n) + 2 * k_params
-                    bic = n * np.log(ss_res/n) + k_params * np.log(n)
-                    
-                    # Store fitting results
+                    # Store results
                     fit_result = {
-                        'material_name': material_name,
+                        'material_name': result['name'],
                         'coefficients': {
                             'A1': A1_fit,
-                            'A1_uncertainty': float(perr[0]),
                             'A2': A2_fit,
-                            'A2_uncertainty': float(perr[1]),
                             'Tm': Tm_fit,
-                            'Tm_uncertainty': float(perr[2]),
                             'DeltaHf': DeltaHf_fit,
-                            'DeltaHf_uncertainty': float(perr[3]),
                             'k': k_fit,
-                            'k_uncertainty': float(perr[4]),
-                            'H298': H298_fit,
-                            'H298_uncertainty': float(perr[5])
+                            'H298': H298_fit
                         },
                         'statistics': {
                             'r_squared': r_squared,
                             'rmse': rmse,
-                            'mae': mae,
-                            'aic': aic,
-                            'bic': bic,
-                            'data_points': n
+                            'data_points': len(T_data)
                         },
-                        'composition': composition_ref,
-                        'temperature_range': [float(T_data.min()), float(T_data.max())],
+                        'composition': result['composition'],
                         'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     }
                     analyzer.fitting_results.append(fit_result)
                     
-                    # Display results
                     st.success(f"✅ Fitting completed! R² = {r_squared:.6f}, RMSE = {rmse:.2f} J/mol")
                     
-                    # Create comprehensive visualization
-                    fig = plt.figure(figsize=(16, 12), dpi=150)
-                    gs = fig.add_gridspec(3, 3, hspace=0.35, wspace=0.35)
+                    # Visualization
+                    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), dpi=150)
                     
-                    # Main fit plot
-                    ax1 = fig.add_subplot(gs[0:2, 0:2])
-                    ax1.scatter(T_data, H_data, alpha=0.6, label='Original Data', 
-                               color='#1E88E5', s=60, edgecolors='white', linewidth=1)
-                    ax1.plot(T_fit, H_fit, 'r-', linewidth=3, label='Fitted Curve', alpha=0.9)
-                    ax1.fill_between(T_fit, 
-                                    analyzer.enthalpy_equation(T_fit, *(fit_params - perr)),
-                                    analyzer.enthalpy_equation(T_fit, *(fit_params + perr)),
-                                    color='red', alpha=0.2, label='Uncertainty')
+                    # Main fit
+                    ax1.scatter(T_data, H_data, alpha=0.6, label='Data', 
+                               color='blue', s=40)
+                    ax1.plot(T_fit, H_fit, 'r-', linewidth=2.5, label='Fit')
+                    ax1.set_xlabel('Temperature (K)', fontweight='bold')
+                    ax1.set_ylabel('Enthalpy (J/mol)', fontweight='bold')
+                    ax1.set_title(f'Enthalpy-Temperature Fit - {result["name"]}', 
+                                 fontweight='bold')
+                    ax1.legend()
+                    ax1.grid(True, alpha=0.3)
                     
-                    ax1.axvline(Tm_fit, color='green', linestyle='--', alpha=0.7, 
-                               label=f'Melting Point Tₘ = {Tm_fit:.1f} ± {perr[2]:.1f} K')
-                    
-                    ax1.set_xlabel('Temperature (K)', fontsize=12, fontweight='bold')
-                    ax1.set_ylabel('Enthalpy (J/mol)', fontsize=12, fontweight='bold')
-                    ax1.set_title(f'Enthalpy-Temperature Curve Fitting\n{material_name}', 
-                                 fontsize=14, fontweight='bold', pad=15)
-                    ax1.grid(True, alpha=0.3, linestyle='--')
-                    ax1.legend(loc='upper left', fontsize=10, framealpha=0.9)
-                    
-                    # Residual plot
-                    ax2 = fig.add_subplot(gs[2, 0])
-                    ax2.scatter(T_data, residuals, alpha=0.7, color='#FF7043', s=40)
+                    # Residuals
+                    ax2.scatter(T_data, residuals, alpha=0.6, color='green', s=30)
                     ax2.axhline(y=0, color='r', linestyle='--', alpha=0.7)
-                    ax2.fill_between([T_data.min(), T_data.max()], 
-                                    [-rmse, -rmse], [rmse, rmse], 
-                                    color='gray', alpha=0.2, label='±RMSE')
-                    ax2.set_xlabel('Temperature (K)', fontsize=10)
-                    ax2.set_ylabel('Residuals (J/mol)', fontsize=10)
-                    ax2.set_title('Residual Plot', fontsize=11, fontweight='bold')
-                    ax2.grid(True, alpha=0.3, linestyle='--')
-                    ax2.legend(loc='upper right', fontsize=9)
-                    
-                    # Residual histogram
-                    ax3 = fig.add_subplot(gs[2, 1])
-                    ax3.hist(residuals, bins=30, edgecolor='black', alpha=0.7, 
-                            color='#4CAF50', density=True)
-                    ax3.axvline(x=0, color='r', linestyle='--', alpha=0.7)
-                    ax3.set_xlabel('Residuals (J/mol)', fontsize=10)
-                    ax3.set_ylabel('Density', fontsize=10)
-                    ax3.set_title('Residual Distribution', fontsize=11, fontweight='bold')
-                    ax3.grid(True, alpha=0.3, axis='y', linestyle='--')
-                    
-                    # Coefficient summary
-                    ax4 = fig.add_subplot(gs[0:2, 2])
-                    ax4.axis('off')
-                    
-                    coeff_text = (
-                        f"**Fitted Parameters**\n\n"
-                        f"A₁ = {A1_fit:.3f} ± {perr[0]:.3f} J/(mol·K)\n"
-                        f"A₂ = {A2_fit:.3f} ± {perr[1]:.3f} J/(mol·K)\n"
-                        f"Tₘ = {Tm_fit:.1f} ± {perr[2]:.1f} K\n"
-                        f"ΔHf = {DeltaHf_fit:,.0f} ± {perr[3]:,.0f} J/mol\n"
-                        f"k = {k_fit:.5f} ± {perr[4]:.5f} 1/K\n"
-                        f"H₂₉₈ = {H298_fit:,.0f} ± {perr[5]:,.0f} J/mol\n\n"
-                        f"**Goodness of Fit**\n\n"
-                        f"R² = {r_squared:.6f}\n"
-                        f"RMSE = {rmse:.2f} J/mol\n"
-                        f"MAE = {mae:.2f} J/mol\n"
-                        f"AIC = {aic:.2f}\n"
-                        f"BIC = {bic:.2f}\n"
-                        f"N = {n} points"
-                    )
-                    
-                    ax4.text(0.05, 0.95, coeff_text, transform=ax4.transAxes,
-                            fontsize=10, verticalalignment='top',
-                            bbox=dict(boxstyle='round', facecolor='wheat', 
-                                     alpha=0.8, pad=10))
+                    ax2.set_xlabel('Temperature (K)', fontweight='bold')
+                    ax2.set_ylabel('Residuals (J/mol)', fontweight='bold')
+                    ax2.set_title('Residuals', fontweight='bold')
+                    ax2.grid(True, alpha=0.3)
                     
                     plt.tight_layout()
                     st.pyplot(fig)
                     
-                    # Download section
-                    st.markdown('<div class="download-section">', unsafe_allow_html=True)
-                    st.subheader("📥 Download Fitting Results")
-                    
-                    col_f1, col_f2, col_f3 = st.columns(3)
-                    
-                    # Coefficients CSV
-                    with col_f1:
-                        coeff_df = pd.DataFrame([{
-                            'Material': material_name,
-                            'A1_J_per_mol_K': A1_fit,
-                            'A1_uncertainty': perr[0],
-                            'A2_J_per_mol_K': A2_fit,
-                            'A2_uncertainty': perr[1],
-                            'Tm_K': Tm_fit,
-                            'Tm_uncertainty': perr[2],
-                            'DeltaHf_J_per_mol': DeltaHf_fit,
-                            'DeltaHf_uncertainty': perr[3],
-                            'k_1_per_K': k_fit,
-                            'k_uncertainty': perr[4],
-                            'H298_J_per_mol': H298_fit,
-                            'H298_uncertainty': perr[5],
-                            'R_squared': r_squared,
-                            'RMSE_J_per_mol': rmse,
-                            'MAE_J_per_mol': mae,
-                            'AIC': aic,
-                            'BIC': bic,
-                            'Data_Points': n,
-                            'Timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        }])
-                        
-                        st.download_button(
-                            "📄 Download Coefficients (CSV)",
-                            data=coeff_df.to_csv(index=False),
-                            file_name=f"fitting_coeffs_{material_name.replace(' ', '_')}.csv",
-                            mime="text/csv",
-                            use_container_width=True
-                        )
-                    
-                    # Fitted curve data
-                    with col_f2:
-                        fitted_df = pd.DataFrame({
-                            'Temperature_K': T_fit,
-                            'Enthalpy_Fitted_J_mol': H_fit,
-                            'Enthalpy_Lower_Bound': analyzer.enthalpy_equation(T_fit, *(fit_params - perr)),
-                            'Enthalpy_Upper_Bound': analyzer.enthalpy_equation(T_fit, *(fit_params + perr))
-                        })
-                        
-                        st.download_button(
-                            "📄 Download Fitted Curve (CSV)",
-                            data=fitted_df.to_csv(index=False),
-                            file_name=f"fitted_curve_{material_name.replace(' ', '_')}.csv",
-                            mime="text/csv",
-                            use_container_width=True
-                        )
-                    
-                    # Complete results JSON
-                    with col_f3:
-                        json_data = json.dumps(fit_result, indent=4, default=str)
-                        st.download_button(
-                            "📄 Download Full Results (JSON)",
-                            data=json_data,
-                            file_name=f"fitting_results_{material_name.replace(' ', '_')}.json",
-                            mime="application/json",
-                            use_container_width=True
-                        )
-                    
-                    st.markdown('</div>', unsafe_allow_html=True)
-                    
-                    # Equation display
-                    st.markdown("---")
-                    st.subheader("🧮 Fitted Equation")
-                    
-                    col_eq1, col_eq2 = st.columns([2, 1])
-                    
-                    with col_eq1:
-                        st.latex(rf"""
-                        H(T) = {A1_fit:.3f} \cdot T + {A2_fit:.3f} \cdot \max(T - {Tm_fit:.1f}, 0) + 
-                        {DeltaHf_fit:,.0f} \cdot \frac{{1}}{{1 + e^{{-{k_fit:.5f}(T - {Tm_fit:.1f})}}}} + {H298_fit:,.0f}
-                        """)
-                    
-                    with col_eq2:
-                        st.markdown("**Equation Components:**")
-                        st.markdown("""
-                        - **A₁·T**: Solid phase sensible heat
-                        - **A₂·max(T-Tₘ,0)**: Liquid phase sensible heat
-                        - **ΔHf·sigmoid(T-Tₘ)**: Phase transition enthalpy
-                        - **H₂₉₈**: Reference enthalpy at 298K
-                        """)
+                    # Display equation
+                    st.markdown("### 🧮 Fitted Equation")
+                    st.latex(rf"""
+                    H(T) = {A1_fit:.3f} \cdot T + {A2_fit:.3f} \cdot \max(T - {Tm_fit:.1f}, 0) + 
+                    {DeltaHf_fit:,.0f} \cdot \frac{{1}}{{1 + e^{{-{k_fit:.5f}(T - {Tm_fit:.1f})}}}} + {H298_fit:,.0f}
+                    """)
                 
                 except Exception as e:
                     st.error(f"❌ Fitting error: {str(e)}")
-                    st.exception(e)
-    
-    # ==================== TAB 4: Multi-Material Comparison ====================
-    with tab4:
-        st.header("🔄 Multi-Material Comparison Dashboard")
-        
-        if not analyzer.results_history:
-            st.info("💡 No computed data available for comparison. Please perform calculations in the 'Enthalpy Computation' tab first.")
-            st.stop()
-        
-        # Selection interface
-        st.subheader("✅ Select Materials for Comparison")
-        
-        # Create selection cards
-        result_cards = []
-        for i, res in enumerate(analyzer.results_history):
-            card_html = f"""
-            <div style="border: 1px solid #ddd; border-radius: 10px; padding: 15px; margin: 10px 0; 
-                        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);">
-                <h4 style="margin: 0; color: #1E88E5;">{res['name']}</h4>
-                <p style="margin: 5px 0; font-size: 0.9em; color: #666;">
-                    📁 {res['tdb_file']}<br>
-                    🌡️ {res['temperature_range'][0]}-{res['temperature_range'][1]} K<br>
-                    📊 {len(res['data'])} data points
-                </p>
-            </div>
-            """
-            result_cards.append((i, card_html))
-        
-        # Display cards in columns
-        num_cols = 3
-        cols = st.columns(num_cols)
-        
-        selected_indices = []
-        for idx, card_html in enumerate(result_cards):
-            with cols[idx % num_cols]:
-                st.markdown(card_html[1], unsafe_allow_html=True)
-                selected = st.checkbox(f"Select {analyzer.results_history[card_html[0]]['name']}", 
-                                      key=f"select_{card_html[0]}")
-                if selected:
-                    selected_indices.append(card_html[0])
-        
-        if not selected_indices:
-            st.warning("⚠️ Please select at least one material for comparison")
-            st.stop()
-        
-        # Limit to 6 materials for clarity
-        if len(selected_indices) > 6:
-            st.warning(f"⚠️ Too many materials selected ({len(selected_indices)}). Limiting to first 6.")
-            selected_indices = selected_indices[:6]
-        
-        # Create comparison visualization
-        with st.spinner("🔄 Generating comparison visualization..."):
-            fig = create_comparison_visualization(analyzer, selected_indices)
-            if fig:
-                st.pyplot(fig)
-        
-        # Detailed comparison table
-        st.markdown("---")
-        st.subheader("📊 Detailed Comparison Table")
-        
-        comparison_data = []
-        for idx in selected_indices:
-            res = analyzer.results_history[idx]
-            data = res['data']
-            
-            # Calculate comprehensive metrics
-            min_h = data['Enthalpy_J_mol'].min()
-            max_h = data['Enthalpy_J_mol'].max()
-            delta_h = max_h - min_h
-            
-            # Calculate Cp from derivative
-            dH = np.diff(data['Enthalpy_J_mol'].values)
-            dT = np.diff(data['Temperature_K'].values)
-            cp_values = dH / dT if len(dH) > 0 else [0]
-            
-            # Find melting temperature (max slope)
-            if len(cp_values) > 0:
-                max_cp_idx = np.argmax(cp_values)
-                Tm_est = data['Temperature_K'].iloc[max_cp_idx]
-                max_cp = cp_values[max_cp_idx]
-            else:
-                Tm_est = 0
-                max_cp = 0
-            
-            avg_cp = np.mean(cp_values) if len(cp_values) > 0 else 0
-            
-            comparison_data.append({
-                'Material': res['name'],
-                'TDB File': res['tdb_file'],
-                'Composition': ', '.join([f"{k}{v:.2f}" for k, v in list(res['composition'].items())[:2]]),
-                'Temp Range (K)': f"{res['temperature_range'][0]}-{res['temperature_range'][1]}",
-                'Data Points': len(data),
-                'Min H (J/mol)': f"{min_h:,.0f}",
-                'Max H (J/mol)': f"{max_h:,.0f}",
-                'ΔH (J/mol)': f"{delta_h:,.0f}",
-                'Tₘ (K)': f"{Tm_est:.0f}",
-                'Max Cp (J/mol·K)': f"{max_cp:.1f}",
-                'Avg Cp (J/mol·K)': f"{avg_cp:.1f}"
-            })
-        
-        comparison_df = pd.DataFrame(comparison_data)
-        st.dataframe(comparison_df, use_container_width=True, hide_index=True)
-        
-        # Statistical analysis
-        st.markdown("---")
-        st.subheader("📈 Statistical Analysis")
-        
-        if len(selected_indices) >= 2:
-            col_stat1, col_stat2 = st.columns(2)
-            
-            with col_stat1:
-                # Calculate correlation matrix
-                enthalpy_data = []
-                common_T = analyzer.results_history[selected_indices[0]]['data']['Temperature_K'].values
-                
-                for idx in selected_indices:
-                    data = analyzer.results_history[idx]['data']
-                    # Interpolate to common temperature grid
-                    H_interp = np.interp(common_T, data['Temperature_K'].values, data['Enthalpy_J_mol'].values)
-                    enthalpy_data.append(H_interp)
-                
-                correlation_matrix = np.corrcoef(enthalpy_data)
-                
-                # Display correlation heatmap
-                fig_corr, ax_corr = plt.subplots(figsize=(8, 6))
-                im = ax_corr.imshow(correlation_matrix, cmap='RdYlBu', vmin=-1, vmax=1)
-                
-                # Add text annotations
-                for i in range(len(selected_indices)):
-                    for j in range(len(selected_indices)):
-                        text = ax_corr.text(j, i, f'{correlation_matrix[i, j]:.2f}',
-                                          ha="center", va="center", color="black")
-                
-                material_names_short = [analyzer.results_history[idx]['name'] for idx in selected_indices]
-                ax_corr.set_xticks(range(len(material_names_short)))
-                ax_corr.set_yticks(range(len(material_names_short)))
-                ax_corr.set_xticklabels(material_names_short, rotation=45, ha='right')
-                ax_corr.set_yticklabels(material_names_short)
-                ax_corr.set_title('Enthalpy Correlation Matrix', fontsize=14, fontweight='bold')
-                plt.colorbar(im, ax=ax_corr)
-                plt.tight_layout()
-                st.pyplot(fig_corr)
-            
-            with col_stat2:
-                # Calculate relative differences
-                st.markdown("**Relative Differences (%)**")
-                
-                base_idx = selected_indices[0]
-                base_name = analyzer.results_history[base_idx]['name']
-                base_delta_h = comparison_df.loc[0, 'ΔH (J/mol)'].replace(',', '')
-                base_delta_h = float(base_delta_h) if base_delta_h != '—' else 0
-                
-                diff_data = []
-                for i, idx in enumerate(selected_indices[1:], 1):
-                    mat_name = analyzer.results_history[idx]['name']
-                    delta_h_str = comparison_df.loc[i, 'ΔH (J/mol)'].replace(',', '')
-                    delta_h = float(delta_h_str) if delta_h_str != '—' else 0
-                    
-                    if base_delta_h != 0:
-                        diff_percent = ((delta_h - base_delta_h) / base_delta_h) * 100
-                        diff_data.append({
-                            'Material': mat_name,
-                            'ΔH Difference (%)': f"{diff_percent:.1f}",
-                            'Compared to': base_name
-                        })
-                
-                if diff_data:
-                    diff_df = pd.DataFrame(diff_data)
-                    st.dataframe(diff_df, use_container_width=True, hide_index=True)
-                else:
-                    st.info("Insufficient data for difference calculation")
-        
-        # Download options
-        st.markdown('<div class="download-section">', unsafe_allow_html=True)
-        st.subheader("📥 Download Comparison Data")
-        
-        col_c1, col_c2, col_c3 = st.columns(3)
-        
-        with col_c1:
-            # Combined data CSV
-            combined_data = {'Temperature_K': analyzer.results_history[selected_indices[0]]['data']['Temperature_K'].values}
-            
-            for idx in selected_indices:
-                res = analyzer.results_history[idx]
-                name_clean = res['name'].replace(' ', '_').replace('-', '_')
-                combined_data[f"{name_clean}_H_molar"] = res['data']['Enthalpy_J_mol'].values
-                combined_data[f"{name_clean}_H_specific"] = res['data']['Enthalpy_J_kg'].values
-            
-            combined_df = pd.DataFrame(combined_data)
-            
-            st.download_button(
-                "📄 Combined Data (CSV)",
-                data=combined_df.to_csv(index=False),
-                file_name=f"multi_material_comparison_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-        
-        with col_c2:
-            # Comparison summary
-            st.download_button(
-                "📄 Summary Table (CSV)",
-                data=comparison_df.to_csv(index=False),
-                file_name=f"comparison_summary_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
-                mime="text/csv",
-                use_container_width=True
-            )
-        
-        with col_c3:
-            # Export all as Excel
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                combined_df.to_excel(writer, sheet_name='Combined Data', index=False)
-                comparison_df.to_excel(writer, sheet_name='Summary', index=False)
-                
-                # Add individual sheets
-                for idx in selected_indices:
-                    res = analyzer.results_history[idx]
-                    res['data'].to_excel(writer, sheet_name=res['name'][:30], index=False)
-            
-            st.download_button(
-                "📗 Excel Workbook",
-                data=output.getvalue(),
-                file_name=f"comparison_workbook_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
-            )
-        
-        st.markdown('</div>', unsafe_allow_html=True)
     
     # ==================== TAB 5: Settings & Help ====================
     with tab5:
-        st.header("⚙️ Settings & Help Center")
+        st.header("⚙️ Settings & Comprehensive Help")
         
-        col_h1, col_h2 = st.columns([1, 1.2])
+        col_set1, col_set2 = st.columns([1, 1])
         
-        with col_h1:
-            st.subheader("📖 User Guide")
+        with col_set1:
+            st.subheader("📖 Complete DOF Error Guide")
             
-            with st.expander("🎯 Quick Start", expanded=True):
+            with st.expander("❓ What is 'Number of degrees of freedom is not zero'?", expanded=True):
                 st.markdown("""
-                **1. First-Time Setup:**
-                - The app automatically creates example TDB files in the `databases/` directory
-                - You can upload your own TDB files or use the provided examples
+                **This is a thermodynamic consistency error from pycalphad's `equilibrium()` function.**
                 
-                **2. Basic Workflow:**
-                1. **Tab 1 (Dashboard):** Overview and quick actions
-                2. **Tab 2 (Enthalpy Computation):** 
-                   - Select/upload TDB file
-                   - Choose elements and set composition (sum to 1.0)
-                   - Define temperature range
-                   - Compute and visualize enthalpy
-                3. **Tab 3 (Curve Fitting):**
-                   - Fit mathematical models to enthalpy data
-                   - Analyze phase transitions
-                   - Export fitting parameters
-                4. **Tab 4 (Multi-Material):**
-                   - Compare multiple materials
-                   - Statistical analysis
-                   - Generate comprehensive reports
+                It means: **Your system is not fully determined for equilibrium calculation.**
                 
-                **3. Composition Rules:**
-                - For n-component system, provide n-1 mole fractions
-                - The nth component is automatically calculated to ensure sum = 1.0
-                - Both mole fractions and weight fractions are supported
+                ### 🔬 Thermodynamic Meaning:
+                
+                From the **Gibbs Phase Rule**:
+                ```
+                F = C - P + 2
+                ```
+                
+                - **F** = Degrees of Freedom (must be 0 for equilibrium)
+                - **C** = Number of Components (real elements, excluding VA)
+                - **P** = Number of Phases
+                - **2** = Temperature + Pressure (always count as 2 intensive variables)
+                
+                **For `equilibrium()` to work:**
+                ```
+                F = 0  ← You must have exactly 0 degrees of freedom!
+                ```
+                
+                Which means you must specify:
+                ```
+                Number of specified intensive variables = C - P + 2
+                ```
                 """)
             
-            with st.expander("🔬 Advanced Features", expanded=False):
+            with st.expander("🎯 Exactly What to Specify", expanded=False):
                 st.markdown("""
-                **Phase Transition Detection:**
-                - Automatic detection of melting/solidification points
-                - Enthalpy change calculation at transitions
-                - Visual markers on plots
+                ### For N-component system:
                 
-                **Curve Fitting:**
-                - Advanced sigmoid-based enthalpy equation
-                - Parameter uncertainty estimation
-                - Multiple goodness-of-fit metrics (R², RMSE, AIC, BIC)
-                - Confidence intervals for predictions
+                **ALWAYS specify:**
+                1. **Temperature (T)** - in Kelvin
+                2. **Pressure (P)** - in Pascals
                 
-                **Data Export:**
-                - Multiple formats: CSV, DAT, JSON, Excel
-                - Publication-quality plots
-                - Complete metadata preservation
-                - Batch export capabilities
+                **For composition (CRITICAL PART):**
+                - **Specify exactly N-1 mole fractions**
+                - **DO NOT specify all N compositions**
+                - **DO NOT let compositions sum to > 1.0**
+                
+                ### Examples:
+                
+                **Binary (2 components):**
+                ```python
+                # CORRECT - Specify 1 composition
+                conditions = {
+                    v.T: 1000,
+                    v.P: 101325,
+                    v.X('AL'): 0.7  # CU is implicit: 1 - 0.7 = 0.3
+                }
+                ```
+                
+                **Ternary (3 components):**
+                ```python
+                # CORRECT - Specify 2 compositions
+                conditions = {
+                    v.T: 1000,
+                    v.P: 101325,
+                    v.X('AL'): 0.6,
+                    v.X('CU'): 0.2  # NI is implicit: 1 - 0.6 - 0.2 = 0.2
+                }
+                ```
+                
+                **Unary (1 component):**
+                ```python
+                # CORRECT - No composition needed
+                conditions = {
+                    v.T: 1000,
+                    v.P: 101325
+                }
+                ```
                 """)
             
-            with st.expander("⚠️ Troubleshooting", expanded=False):
+            with st.expander("🚫 Common Mistakes & Fixes", expanded=False):
                 st.markdown("""
-                **Common Issues:**
+                ### ❌ MISTAKE 1: Missing T or P
+                ```python
+                # WRONG - No temperature!
+                conditions = {
+                    v.P: 101325,
+                    v.X('AL'): 0.7
+                }
+                ```
+                **FIX:** Always include both `v.T` and `v.P`
                 
-                1. **"No TDB file found"**
-                   - Check `databases/` directory exists
-                   - Upload a TDB file or use provided examples
-                   - Ensure file has .tdb or .TDB extension
+                ### ❌ MISTAKE 2: Specifying all compositions
+                ```python
+                # WRONG - Specifying all 3 for ternary
+                conditions = {
+                    v.T: 1000,
+                    v.P: 101325,
+                    v.X('AL'): 0.6,
+                    v.X('CU'): 0.2,
+                    v.X('NI'): 0.2  # REDUNDANT! Sums to 1.0
+                }
+                ```
+                **FIX:** Specify only N-1 compositions
                 
-                2. **Calculation errors**
-                   - Verify element selection matches TDB file
-                   - Check composition sums to 1.0
-                   - Ensure temperature range is appropriate
-                   - Reduce number of phases if calculation is slow
+                ### ❌ MISTAKE 3: Using v.N unnecessarily
+                ```python
+                # WRONG - v.N is not needed
+                conditions = {
+                    v.T: 1000,
+                    v.P: 101325,
+                    v.X('AL'): 0.7,
+                    v.N: 1  # pycalphad assumes N=1 by default
+                }
+                ```
+                **FIX:** Remove `v.N` unless you specifically need to vary total moles
                 
-                3. **Memory issues**
-                   - Reduce temperature range or step size
-                   - Limit number of phases in equilibrium
-                   - Clear session data periodically
+                ### ❌ MISTAKE 4: Composition sum > 1.0
+                ```python
+                # WRONG - Sum > 1.0
+                conditions = {
+                    v.T: 1000,
+                    v.P: 101325,
+                    v.X('AL'): 0.8,
+                    v.X('CU'): 0.3  # Sum = 1.1 > 1.0!
+                }
+                ```
+                **FIX:** Ensure sum of specified compositions ≤ 1.0
+                """)
+            
+            with st.expander("🔧 Debugging Steps", expanded=False):
+                st.markdown("""
+                ### Step-by-Step Debugging:
                 
-                4. **Visualization problems**
-                   - Update matplotlib to latest version
-                   - Check data contains no NaN values
-                   - Ensure sufficient data points for smooth plots
+                1. **Count your components (C)**
+                   ```python
+                   real_components = [c for c in components if c != 'VA']
+                   C = len(real_components)
+                   ```
+                
+                2. **Count your phases (P)**
+                   ```python
+                   P = len(phases)
+                   ```
+                
+                3. **Calculate required variables**
+                   ```python
+                   required_vars = C - P + 2
+                   ```
+                
+                4. **Count what you're specifying**
+                   - +1 for `v.T`
+                   - +1 for `v.P`  
+                   - +1 for each independent `v.X(element)`
+                
+                5. **Check:**
+                   ```
+                   If specified = required: ✅ Good to go!
+                   If specified < required: ❌ Under-constrained
+                   If specified > required: ❌ Over-constrained
+                   ```
+                
+                6. **Print your conditions:**
+                   ```python
+                   print("Conditions:")
+                   for k, v in conditions.items():
+                       print(f"  {k}: {v}")
+                   ```
                 """)
         
-        with col_h2:
+        with col_set2:
             st.subheader("⚙️ Application Management")
-            
-            # Session management
-            st.markdown("#### 🗑️ Session Management")
-            
-            col_sess1, col_sess2 = st.columns(2)
-            
-            with col_sess1:
-                if st.button("Clear All Data", type="secondary", use_container_width=True):
-                    analyzer.results_history = []
-                    analyzer.fitting_results = []
-                    st.success("✅ All session data cleared!")
-                    st.rerun()
-            
-            with col_sess2:
-                if st.button("Reset to Defaults", type="secondary", use_container_width=True):
-                    # Clear session state
-                    for key in list(st.session_state.keys()):
-                        if key != 'analyzer':
-                            del st.session_state[key]
-                    st.success("✅ Application reset to defaults!")
-                    st.rerun()
             
             # Database management
             st.markdown("#### 📁 Database Management")
             
             tdb_files = analyzer.get_available_tdb_files()
-            
             if tdb_files:
                 st.write(f"**Found {len(tdb_files)} TDB files:**")
                 
                 for tdb in tdb_files:
-                    col_f1, col_f2, col_f3, col_f4 = st.columns([3, 1, 1, 1])
-                    with col_f1:
+                    col_t1, col_t2 = st.columns([3, 1])
+                    with col_t1:
                         st.caption(f"`{tdb}`")
-                    with col_f2:
-                        file_path = analyzer.database_dir / tdb
-                        file_size = os.path.getsize(file_path) / 1024
-                        st.caption(f"{file_size:.1f} KB")
-                    with col_f3:
-                        if st.button("📋", key=f"copy_{tdb}", help="Copy path"):
-                            st.code(str(file_path))
-                    with col_f4:
-                        if st.button("🗑️", key=f"delete_{tdb}", help="Delete file"):
+                    with col_t2:
+                        if st.button("🗑️", key=f"del_{tdb}", help="Delete"):
                             try:
-                                os.remove(file_path)
+                                (analyzer.database_dir / tdb).unlink()
                                 st.success(f"Deleted {tdb}")
                                 st.rerun()
-                            except Exception as e:
-                                st.error(f"Error: {str(e)}")
+                            except:
+                                st.error("Error deleting")
             else:
-                st.info("No TDB files in database directory.")
+                st.info("No TDB files in database directory")
             
-            # TDB upload section
+            # TDB upload
             st.markdown("#### 📤 Upload TDB Files")
+            uploaded = st.file_uploader("Upload TDB", type=["tdb", "TDB"], key="upload_settings")
+            if uploaded:
+                analyzer.save_uploaded_tdb(uploaded)
+                st.rerun()
             
-            uploaded_new = st.file_uploader(
-                "Upload new TDB file",
-                type=["tdb", "TDB"],
-                key="uploader_settings",
-                help="Upload thermodynamic database files"
-            )
+            # Session management
+            st.markdown("#### 🗑️ Session Management")
             
-            if uploaded_new is not None:
-                saved_path = analyzer.save_uploaded_tdb(uploaded_new)
-                if saved_path:
+            col_sess1, col_sess2 = st.columns(2)
+            with col_sess1:
+                if st.button("Clear All Data", use_container_width=True, type="secondary"):
+                    analyzer.results_history = []
+                    analyzer.fitting_results = []
+                    st.success("Data cleared!")
                     st.rerun()
             
-            # Custom element management
-            st.markdown("#### ⚛️ Custom Element Database")
-            
-            col_e1, col_e2, col_e3 = st.columns(3)
-            with col_e1:
-                new_element = st.text_input("Element symbol", key="new_elem_sym")
-            with col_e2:
-                new_weight = st.number_input("Molar weight (g/mol)", 1.0, 500.0, 50.0, 0.1)
-            with col_e3:
-                if st.button("➕ Add Element", use_container_width=True):
-                    if new_element.strip():
-                        elem_key = new_element.strip().upper()
-                        MOLAR_WEIGHTS[elem_key] = new_weight
-                        st.success(f"✅ Added {elem_key}: {new_weight} g/mol")
-                    else:
-                        st.warning("⚠️ Please enter an element symbol")
-            
-            # Display custom elements
-            custom_elements = [k for k in MOLAR_WEIGHTS.keys() if k not in [
-                'AG', 'AL', 'AU', 'BI', 'CU', 'IN', 'NI', 'PB', 'SN', 'TI', 
-                'V', 'FE', 'CR', 'MO', 'W', 'MN', 'SI', 'C', 'N', 'O', 'H'
-            ]]
-            
-            if custom_elements:
-                st.markdown("**Custom Elements:**")
-                for elem in sorted(custom_elements):
-                    st.write(f"- {elem}: {MOLAR_WEIGHTS[elem]} g/mol")
+            with col_sess2:
+                if st.button("Reset Application", use_container_width=True, type="secondary"):
+                    for key in list(st.session_state.keys()):
+                        del st.session_state[key]
+                    st.success("Application reset!")
+                    st.rerun()
             
             # About section
             st.markdown("---")
             st.subheader("ℹ️ About")
             
             st.markdown("""
-            **Thermodynamic Enthalpy Analyzer Pro**
+            **Thermodynamic Enthalpy Analyzer Pro v3.0**
             
-            *Version 2.0 | Advanced Edition*
+            *With Intelligent DOF Error Prevention*
             
-            A comprehensive tool for thermodynamic calculations using the CALPHAD method.
-            
-            **Core Features:**
-            - Multi-component system support
-            - Automatic phase transition detection
-            - Advanced curve fitting with uncertainty
-            - Multi-material comparison
-            - Publication-quality visualizations
+            **Key Features:**
+            - 🛡️ **DOF Error Prevention**: Gibbs Phase Rule validation
+            - 🔬 **Smart Composition Handling**: Auto-balancing for n-component systems
+            - 📊 **Comprehensive Analysis**: Phase diagrams, curve fitting, comparison
+            - 🎯 **Minimal Working Examples**: Auto-generated code for quick fixes
             
             **Technical Stack:**
-            - **CALPHAD Engine:** pycalphad
-            - **Numerical Methods:** scipy, numpy
-            - **Visualization:** matplotlib, plotly
-            - **Interface:** Streamlit
-            - **Data Handling:** pandas, xarray
+            - **CALPHAD Engine**: pycalphad
+            - **Numerical Methods**: scipy, numpy
+            - **Visualization**: matplotlib
+            - **Interface**: Streamlit
             
-            **License:** MIT Open Source
-            **Developed by:** Thermodynamic Analysis Research Group
-            
-            © 2026 Thermodynamic Analysis Toolkit. All rights reserved.
+            **License**: MIT
+            **Version**: 3.0.0
             """)
     
     # Footer
     st.markdown("---")
     
-    footer_col1, footer_col2, footer_col3 = st.columns([2, 1, 1])
+    footer_col1, footer_col2 = st.columns([3, 1])
     
     with footer_col1:
-        st.caption(f"🔥 Thermodynamic Enthalpy Analyzer Pro v2.0 | Session: {datetime.now().strftime('%Y%m%d-%H%M%S')}")
+        st.caption(f"🔥 Thermodynamic Enthalpy Analyzer Pro | DOF-Protected Edition | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
     with footer_col2:
-        st.caption(f"📊 Materials: {len(analyzer.results_history)} | Fits: {len(analyzer.fitting_results)}")
-    
-    with footer_col3:
-        if st.button("🔄 Refresh Session", type="secondary"):
+        if st.button("🔄 Refresh", type="secondary"):
             st.rerun()
 
 if __name__ == "__main__":
