@@ -1632,7 +1632,7 @@ def main():
                 'Temp Range (K)': f"{res['temperature_range'][0]}-{res['temperature_range'][1]}",
                 'Data Points': len(data),
                 'Min H (J/mol)': f"{min_h:,.0f}",
-                'Max H (J/mol)": f"{max_h:,.0f}",
+                'Max H (J/mol)': f"{max_h:,.0f}",
                 'ΔH (J/mol)': f"{delta_h:,.0f}",
                 'Avg dH/dT (J/mol·K)': f"{avg_slope:.2f}",
                 'Tm (K)': f"{Tm:.1f}" if Tm else "N/A"
