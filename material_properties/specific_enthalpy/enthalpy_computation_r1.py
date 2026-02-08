@@ -19,8 +19,6 @@ from typing import Dict, List, Optional, Tuple, Any
 import sympy as sp
 from itertools import combinations
 import math
-import hashlib
-import time
 
 warnings.filterwarnings('ignore')
 
@@ -167,47 +165,6 @@ MOLAR_WEIGHTS = {
     'CL': 35.453, 'K': 39.0983, 'CA': 40.078, 'F': 18.9984032
 }
 
-class WidgetKeyManager:
-    """Manages unique keys for Streamlit widgets to prevent duplicate ID errors"""
-    
-    def __init__(self):
-        self.widget_counter = {}
-        self.tab_prefix = ""
-        self.section_prefix = ""
-    
-    def set_tab_context(self, tab_name: str):
-        """Set current tab context for key generation"""
-        self.tab_prefix = tab_name.replace(" ", "_").upper()
-        return self
-    
-    def set_section_context(self, section_name: str):
-        """Set current section context for key generation"""
-        self.section_prefix = section_name.replace(" ", "_").upper()
-        return self
-    
-    def generate_key(self, widget_type: str, label: str = "", custom_id: str = ""):
-        """Generate a unique key for a widget"""
-        if custom_id:
-            base_key = custom_id
-        else:
-            # Create a base key from tab, section, widget type and label
-            label_hash = hashlib.md5(label.encode()).hexdigest()[:8]
-            base_parts = [self.tab_prefix, self.section_prefix, widget_type, label_hash]
-            base_key = "_".join([p for p in base_parts if p])
-        
-        # Count occurrences to ensure uniqueness
-        if base_key not in self.widget_counter:
-            self.widget_counter[base_key] = 0
-        
-        self.widget_counter[base_key] += 1
-        unique_key = f"{base_key}_{self.widget_counter[base_key]}"
-        
-        return unique_key
-    
-    def reset_counter(self):
-        """Reset the counter for a new run"""
-        self.widget_counter.clear()
-
 class ThermodynamicSystemAnalyzer:
     """Enhanced analyzer with Gibbs Phase Rule validation"""
     
@@ -218,7 +175,6 @@ class ThermodynamicSystemAnalyzer:
         self.database_dir.mkdir(exist_ok=True)
         self._ensure_default_tdb()
         self.system_state = {}
-        self.key_manager = WidgetKeyManager()
     
     def _ensure_default_tdb(self):
         """Create comprehensive example TDB files"""
@@ -501,8 +457,7 @@ $"""
             'compositions': {},
             'total_composition_vars': 0,
             'independent_intensive': 0,
-            'extensive_vars': 0,
-            'independent_composition_vars': 0
+            'extensive_vars': 0
         }
         
         for key, value in conditions.items():
@@ -531,15 +486,11 @@ $"""
         # Check if compositions are properly specified
         comp_values = list(analysis['compositions'].values())
         if comp_values:
-            # Calculate sum of scalar values (exclude tuples which are ranges)
-            scalar_values = [v for v in comp_values if not isinstance(v, tuple)]
-            if scalar_values:
-                total_comp = sum(scalar_values)
-                analysis['independent_composition_vars'] = len(scalar_values)
-                if abs(total_comp - 1.0) < 0.001 and len(scalar_values) > 1:
-                    analysis['independent_composition_vars'] = len(scalar_values) - 1
-            else:
-                analysis['independent_composition_vars'] = len(comp_values)
+            # If all compositions sum to 1, we might have over-specified
+            total_comp = sum([v for v in comp_values if not isinstance(v, tuple)])
+            analysis['independent_composition_vars'] = len(comp_values)
+            if abs(total_comp - 1.0) < 0.001 and len(comp_values) > 1:
+                analysis['independent_composition_vars'] = len(comp_values) - 1
         
         analysis['independent_intensive'] += analysis['independent_composition_vars']
         
@@ -584,8 +535,8 @@ $"""
                 suggestions.append("• Specify temperature (T)")
             if not specified_vars['P_specified']:
                 suggestions.append("• Specify pressure (P)")
-            if specified_vars['independent_composition_vars'] < C - 1:
-                suggestions.append(f"• Specify {C - 1 - specified_vars['independent_composition_vars']} more composition variable(s)")
+            if specified_vars['total_composition_vars'] < C - 1:
+                suggestions.append(f"• Specify {C - 1 - specified_vars['total_composition_vars']} more composition variable(s)")
             
             if suggestions:
                 messages.append("\n**Suggestions:**")
@@ -612,12 +563,10 @@ $"""
             messages.append("⚠️ **v.N is specified** - pycalphad assumes N=1 by default. Consider removing unless you have a specific need.")
         
         # Check composition sum
-        scalar_comp_values = [v for v in specified_vars['compositions'].values() 
-                             if not isinstance(v, tuple)]
-        if scalar_comp_values:
-            comp_sum = sum(scalar_comp_values)
-            if comp_sum > 1.001 or comp_sum < 0.999:
-                messages.append(f"⚠️ **Composition sum = {comp_sum:.4f}** (should be ≈1.0)")
+        comp_sum = sum([v for v in specified_vars['compositions'].values() 
+                       if not isinstance(v, tuple)])
+        if comp_sum > 1.001 or comp_sum < 0.999:
+            messages.append(f"⚠️ **Composition sum = {comp_sum:.4f}** (should be ≈1.0)")
         
         return "\n".join(messages)
     
@@ -687,21 +636,18 @@ $"""
         
         # 3. Check composition sum
         comp_sum = 0
-        scalar_comp_values = []
         for val in comp_vars.values():
             if not isinstance(val, tuple):  # Skip temperature ranges
-                scalar_comp_values.append(val)
                 comp_sum += val
         
-        if scalar_comp_values:
-            if comp_sum > 1.001:
-                validation['errors'].append(f"❌ Composition sum = {comp_sum:.4f} > 1.0")
-                validation['is_valid'] = False
-            elif comp_sum < 0.999 and len(scalar_comp_values) == num_components - 1:
-                # For n-1 components, the sum should be ≤ 1.0
-                validation['warnings'].append(
-                    f"⚠️ Composition sum = {comp_sum:.4f}. The remaining component will be 1 - {comp_sum:.4f} = {1-comp_sum:.4f}"
-                )
+        if comp_sum > 1.001:
+            validation['errors'].append(f"❌ Composition sum = {comp_sum:.4f} > 1.0")
+            validation['is_valid'] = False
+        elif comp_sum < 0.999 and len(comp_vars) == num_components - 1:
+            # For n-1 components, the sum should be ≤ 1.0
+            validation['warnings'].append(
+                f"⚠️ Composition sum = {comp_sum:.4f}. The remaining component will be 1 - {comp_sum:.4f} = {1-comp_sum:.4f}"
+            )
         
         # 4. Check for v.N misuse
         if v.N in conditions:
@@ -1059,1493 +1005,6 @@ def create_phase_diagram_visualization(components, phases, conditions):
     plt.tight_layout()
     return fig
 
-class Tab2Content:
-    """Content for Tab 2: DOF Analyzer - with proper widget key management"""
-    
-    def __init__(self, analyzer):
-        self.analyzer = analyzer
-        self.key_manager = analyzer.key_manager
-        self.key_manager.set_tab_context("DOF_ANALYZER")
-    
-    def render(self):
-        """Render the entire DOF Analyzer tab"""
-        st.header("⚖️ Degrees of Freedom Analyzer")
-        st.markdown("**Diagnose and fix 'Number of degrees of freedom is not zero' errors**")
-        
-        col_ana1, col_ana2 = st.columns([1, 1])
-        
-        with col_ana1:
-            self._render_system_configuration()
-        
-        with col_ana2:
-            self._render_conditions_specification()
-        
-        # Store the components and phases for later use
-        if 'selected_elements' not in st.session_state:
-            st.session_state.selected_elements = []
-        if 'selected_phases' not in st.session_state:
-            st.session_state.selected_phases = []
-        if 'conditions' not in st.session_state:
-            st.session_state.conditions = {}
-        
-        # Analyze button
-        st.markdown("---")
-        if st.button("🔬 Analyze Degrees of Freedom", 
-                    type="primary", 
-                    use_container_width=True,
-                    key="dof_analyze_button"):
-            self._perform_analysis()
-    
-    def _render_system_configuration(self):
-        """Render system configuration section"""
-        st.subheader("📋 System Configuration")
-        
-        # Manual input or load from TDB
-        config_source = st.radio(
-            "Configuration source:",
-            ["Manual input", "Load from TDB file"],
-            horizontal=True,
-            key="dof_config_source"
-        )
-        
-        if config_source == "Load from TDB file":
-            available_tdb = self.analyzer.get_available_tdb_files()
-            if not available_tdb:
-                st.info("No TDB files found. Please upload one in the Settings tab.")
-                selected_tdb = None
-            else:
-                selected_tdb = st.selectbox(
-                    "Select TDB file:",
-                    available_tdb,
-                    key="dof_tdb_select"
-                )
-                
-                if selected_tdb:
-                    tdb_path = self.analyzer.database_dir / selected_tdb
-                    try:
-                        dbf = Database(str(tdb_path))
-                        elements = sorted([e for e in dbf.elements if e != 'VA'])
-                        phases = sorted(dbf.phases.keys())
-                        
-                        # Auto-fill components and phases
-                        components = st.multiselect(
-                            "Components (select from TDB):",
-                            elements,
-                            default=elements[:min(2, len(elements))],
-                            key="dof_components_select"
-                        )
-                        
-                        selected_phases = st.multiselect(
-                            "Phases (select from TDB):",
-                            phases,
-                            default=phases[:min(2, len(phases))],
-                            key="dof_phases_select"
-                        )
-                        
-                        st.session_state.selected_elements = components
-                        st.session_state.selected_phases = selected_phases
-                        
-                    except Exception as e:
-                        st.error(f"Error loading TDB: {str(e)}")
-                        st.session_state.selected_elements = []
-                        st.session_state.selected_phases = []
-        else:
-            # Manual input
-            self.key_manager.set_section_context("MANUAL_INPUT")
-            
-            st.markdown("**Enter Components:**")
-            comp_input = st.text_input(
-                "Component symbols (comma-separated, e.g., AL, CU, NI):",
-                "AL, CU",
-                key=self.key_manager.generate_key("text_input", "components_input")
-            )
-            components = [c.strip().upper() for c in comp_input.split(',') if c.strip()]
-            
-            st.markdown("**Enter Phases:**")
-            phase_input = st.text_input(
-                "Phase names (comma-separated, e.g., LIQUID, FCC_A1):",
-                "LIQUID, FCC_A1",
-                key=self.key_manager.generate_key("text_input", "phases_input")
-            )
-            selected_phases = [p.strip().upper() for p in phase_input.split(',') if p.strip()]
-            
-            st.session_state.selected_elements = components
-            st.session_state.selected_phases = selected_phases
-        
-        if not st.session_state.selected_elements:
-            st.warning("Please specify at least one component")
-        
-        if not st.session_state.selected_phases:
-            st.warning("Please specify at least one phase")
-    
-    def _render_conditions_specification(self):
-        """Render conditions specification section"""
-        self.key_manager.set_section_context("CONDITIONS")
-        
-        st.subheader("⚙️ Conditions Specification")
-        
-        # Temperature
-        temp_type = st.radio(
-            "Temperature specification:",
-            ["Single value", "Range"],
-            horizontal=True,
-            key=self.key_manager.generate_key("radio", "temp_type")
-        )
-        
-        if temp_type == "Single value":
-            T_value = st.number_input(
-                "Temperature (K)", 
-                100, 5000, 1000,
-                key=self.key_manager.generate_key("number_input", "temp_single")
-            )
-            T_condition = T_value
-        else:
-            col_t1, col_t2, col_t3 = st.columns(3)
-            with col_t1:
-                T_start = st.number_input(
-                    "T start (K)", 
-                    100, 5000, 800,
-                    key=self.key_manager.generate_key("number_input", "temp_start")
-                )
-            with col_t2:
-                T_end = st.number_input(
-                    "T end (K)", 
-                    T_start, 6000, 1500,
-                    key=self.key_manager.generate_key("number_input", "temp_end")
-                )
-            with col_t3:
-                T_step = st.number_input(
-                    "T step (K)", 
-                    1, 200, 10,
-                    key=self.key_manager.generate_key("number_input", "temp_step")
-                )
-            T_condition = (T_start, T_end, T_step)
-        
-        # Pressure
-        P_value = st.number_input(
-            "Pressure (Pa)", 
-            1000, 10000000, 101325,
-            key=self.key_manager.generate_key("number_input", "pressure")
-        )
-        
-        # Composition specification
-        st.markdown("**Composition (mole fractions):**")
-        
-        components = st.session_state.selected_elements
-        if not components:
-            st.warning("Please specify components first")
-            return
-        
-        st.caption(f"For {len(components)} components, specify exactly {len(components)-1} independent compositions")
-        
-        composition = {}
-        remaining = 1.0
-        
-        for i, comp in enumerate(components):
-            self.key_manager.set_section_context(f"COMPOSITION_{comp}")
-            
-            if i < len(components) - 1:
-                max_val = min(1.0, remaining)
-                fraction = st.number_input(
-                    f"X({comp})",
-                    min_value=0.0,
-                    max_value=float(max_val),
-                    value=float(1.0/len(components)),
-                    step=0.01,
-                    key=self.key_manager.generate_key("number_input", f"comp_{comp}")
-                )
-                composition[comp] = fraction
-                remaining -= fraction
-            else:
-                # Last component gets remaining
-                st.info(f"X({comp}) = {remaining:.3f} (calculated)")
-                composition[comp] = remaining
-        
-        # Build conditions dictionary
-        conditions = {
-            v.T: T_condition,
-            v.P: P_value
-        }
-        
-        # Add composition conditions (n-1 components)
-        for i, (comp, frac) in enumerate(composition.items()):
-            if i < len(components) - 1:  # Only first n-1
-                conditions[v.X(comp)] = frac
-        
-        st.session_state.conditions = conditions
-        st.session_state.composition = composition
-        st.session_state.temperature_condition = T_condition
-    
-    def _perform_analysis(self):
-        """Perform DOF analysis and display results"""
-        components = st.session_state.selected_elements
-        selected_phases = st.session_state.selected_phases
-        conditions = st.session_state.conditions
-        
-        if not components or not selected_phases:
-            st.error("Please configure the system first")
-            return
-        
-        with st.spinner("Analyzing thermodynamic system..."):
-            try:
-                # Add VA to components for calculation
-                components_with_va = components + ['VA']
-                
-                # Create dashboard visualization
-                fig, dof_analysis = create_thermodynamic_dashboard(
-                    self.analyzer, components_with_va, selected_phases, conditions
-                )
-                
-                st.pyplot(fig)
-                
-                # Display analysis results
-                st.markdown("### 📊 Analysis Results")
-                st.markdown(dof_analysis['message'], unsafe_allow_html=True)
-                
-                # Additional validation
-                validation = self.analyzer.validate_equilibrium_conditions(
-                    components_with_va, selected_phases, conditions
-                )
-                
-                if validation['errors']:
-                    st.markdown("### ❌ Validation Errors")
-                    for error in validation['errors']:
-                        st.error(error)
-                
-                if validation['warnings']:
-                    st.markdown("### ⚠️ Validation Warnings")
-                    for warning in validation['warnings']:
-                        st.warning(warning)
-                
-                if validation['suggestions']:
-                    st.markdown("### 💡 Suggestions for Fix")
-                    for suggestion in validation['suggestions']:
-                        st.markdown(suggestion)
-                
-                # Generate working example
-                if not dof_analysis['is_valid']:
-                    st.markdown("### 🔧 Minimal Working Example")
-                    example = self.analyzer.create_minimal_working_example(
-                        components_with_va, selected_phases
-                    )
-                    
-                    with st.expander("View code template", expanded=False):
-                        st.code(example['code'], language='python')
-                    
-                    if st.button("📋 Copy to Clipboard", key="copy_example_dof"):
-                        st.code(example['code'], language='python')
-                        st.success("Code copied! Paste it into your calculation.")
-                
-                # Test equilibrium if system is valid
-                if dof_analysis['is_valid'] and validation['is_valid']:
-                    st.markdown("### 🎯 Ready for Equilibrium Calculation")
-                    
-                    # Show what will be passed to equilibrium
-                    st.markdown("**Final conditions for equilibrium():**")
-                    conds_display = []
-                    for key, value in conditions.items():
-                        if key == v.T:
-                            if isinstance(value, tuple):
-                                conds_display.append(f"v.T: ({value[0]}, {value[1]}, {value[2]})")
-                            else:
-                                conds_display.append(f"v.T: {value}")
-                        elif key == v.P:
-                            conds_display.append(f"v.P: {value}")
-                        elif 'X(' in str(key):
-                            element = str(key).split('(')[1].split(')')[0]
-                            conds_display.append(f"v.X('{element}'): {value:.3f}")
-                    
-                    for cond in conds_display:
-                        st.code(cond)
-                    
-                    st.success("✅ System is properly constrained! Ready for equilibrium calculation.")
-                    
-                    # Option to test with a TDB file
-                    test_tdb = st.selectbox(
-                        "Select TDB file to test:",
-                        [""] + self.analyzer.get_available_tdb_files(),
-                        key="test_tdb_select_dof"
-                    )
-                    
-                    if test_tdb and st.button("🧪 Test Equilibrium Calculation", 
-                                            type="secondary", 
-                                            key="test_calc_dof"):
-                        self._test_equilibrium_calculation(test_tdb, components_with_va, 
-                                                         selected_phases, conditions)
-            
-            except Exception as e:
-                st.error(f"❌ Analysis error: {str(e)}")
-                st.code(traceback.format_exc(), language='python')
-    
-    def _test_equilibrium_calculation(self, test_tdb, components_with_va, selected_phases, conditions):
-        """Test equilibrium calculation with selected TDB"""
-        with st.spinner("Testing equilibrium calculation..."):
-            try:
-                tdb_path = self.analyzer.database_dir / test_tdb
-                dbf_test = Database(str(tdb_path))
-                
-                # Check if selected phases exist in database
-                available_phases = sorted(dbf_test.phases.keys())
-                missing_phases = [p for p in selected_phases if p not in available_phases]
-                
-                if missing_phases:
-                    st.warning(f"Phases not in database: {', '.join(missing_phases)}")
-                    st.info(f"Available phases: {', '.join(available_phases[:5])}...")
-                    # Use only available phases
-                    selected_phases = [p for p in selected_phases if p in available_phases]
-                
-                # Perform equilibrium calculation
-                eq_result = equilibrium(
-                    dbf_test,
-                    components_with_va,
-                    selected_phases,
-                    conditions,
-                    output='HM',
-                    verbose=False
-                )
-                
-                st.success("✅ Equilibrium calculation successful!")
-                
-                # Display results
-                T_values = eq_result.T.values.flatten()
-                HM_values = eq_result.HM.values.flatten()
-                
-                result_df = pd.DataFrame({
-                    'Temperature_K': T_values,
-                    'Enthalpy_J_mol': HM_values
-                })
-                
-                result_df = result_df.dropna().sort_values('Temperature_K')
-                
-                if len(result_df) > 0:
-                    st.metric("Data Points Generated", len(result_df))
-                    
-                    # Quick plot
-                    fig_test, ax_test = plt.subplots(figsize=(10, 6))
-                    ax_test.plot(result_df['Temperature_K'], result_df['Enthalpy_J_mol'], 
-                               'b-', linewidth=2, marker='o', markersize=4)
-                    ax_test.set_xlabel('Temperature (K)', fontweight='bold')
-                    ax_test.set_ylabel('Enthalpy (J/mol)', fontweight='bold')
-                    ax_test.set_title('Test Equilibrium Calculation Result', fontweight='bold')
-                    ax_test.grid(True, alpha=0.3)
-                    st.pyplot(fig_test)
-                    
-                    # Store for later use
-                    composition = st.session_state.composition
-                    material_name = f"Test: {test_tdb}"
-                    result_info = {
-                        'name': material_name,
-                        'composition': composition,
-                        'data': result_df,
-                        'phases': selected_phases,
-                        'tdb_file': test_tdb,
-                        'temperature_range': (st.session_state.temperature_condition 
-                                           if isinstance(st.session_state.temperature_condition, tuple) 
-                                           else (st.session_state.temperature_condition, 
-                                                 st.session_state.temperature_condition, 1)),
-                        'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    }
-                    self.analyzer.results_history.append(result_info)
-                    
-                    st.success("✅ Test calculation stored in history!")
-                else:
-                    st.warning("Calculation completed but returned no valid data points.")
-            
-            except Exception as e:
-                st.error(f"❌ Test calculation failed: {str(e)}")
-                st.code(traceback.format_exc(), language='python')
-
-class Tab3Content:
-    """Content for Tab 3: Computation - with proper widget key management"""
-    
-    def __init__(self, analyzer):
-        self.analyzer = analyzer
-        self.key_manager = analyzer.key_manager
-        self.key_manager.set_tab_context("COMPUTATION")
-    
-    def render(self):
-        """Render the entire Computation tab"""
-        st.header("🔬 Enthalpy Computation with DOF Protection")
-        
-        # File selection
-        st.subheader("📁 TDB File Selection")
-        
-        available_tdb = self.analyzer.get_available_tdb_files()
-        if not available_tdb:
-            st.info("No TDB files found. Using built-in examples...")
-            available_tdb = self.analyzer.get_available_tdb_files()
-        
-        col_file1, col_file2 = st.columns([1.2, 1])
-        
-        with col_file1:
-            self._render_file_selection(available_tdb)
-        
-        with col_file2:
-            self._render_database_info()
-        
-        # Store tdb_path in session state
-        if 'tdb_path' not in st.session_state:
-            st.session_state.tdb_path = None
-        if 'dbf' not in st.session_state:
-            st.session_state.dbf = None
-        
-        if not st.session_state.tdb_path:
-            st.info("👈 Please select or upload a TDB file")
-            return
-        
-        # System configuration with DOF protection
-        st.markdown("---")
-        st.subheader("⚙️ System Configuration")
-        
-        col_conf1, col_conf2 = st.columns([1, 1])
-        
-        with col_conf1:
-            self._render_system_configuration()
-        
-        with col_conf2:
-            self._render_calculation_parameters()
-        
-        # DOF Analysis and Validation
-        st.markdown("---")
-        st.subheader("⚖️ DOF Validation Before Calculation")
-        
-        self._perform_dof_validation()
-        
-        # Calculate button
-        st.markdown("---")
-        self._render_calculation_button()
-    
-    def _render_file_selection(self, available_tdb):
-        """Render file selection section"""
-        self.key_manager.set_section_context("FILE_SELECTION")
-        
-        tdb_source = st.radio(
-            "Source:",
-            ["Select from database", "Upload new TDB"],
-            horizontal=True,
-            key=self.key_manager.generate_key("radio", "tdb_source")
-        )
-        
-        tdb_path = None
-        
-        if tdb_source == "Select from database" and available_tdb:
-            selected_file = st.selectbox(
-                "Available TDB files:",
-                available_tdb,
-                index=0,
-                key=self.key_manager.generate_key("selectbox", "tdb_select")
-            )
-            tdb_path = str(self.analyzer.database_dir / selected_file)
-            st.success(f"✅ Selected: **{selected_file}**")
-        
-        else:
-            uploaded_file = st.file_uploader(
-                "Upload TDB file",
-                type=["tdb", "TDB"],
-                key=self.key_manager.generate_key("file_uploader", "tdb_upload")
-            )
-            
-            if uploaded_file:
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.tdb') as tmp:
-                    tmp.write(uploaded_file.getbuffer())
-                    tdb_path = tmp.name
-                
-                st.success(f"✅ Uploaded: **{uploaded_file.name}**")
-        
-        st.session_state.tdb_path = tdb_path
-    
-    def _render_database_info(self):
-        """Render database information section"""
-        tdb_path = st.session_state.tdb_path
-        
-        if tdb_path and os.path.exists(tdb_path):
-            try:
-                dbf = Database(tdb_path)
-                st.session_state.dbf = dbf
-                
-                elements = sorted([e for e in dbf.elements if e != 'VA'])
-                phases = sorted(dbf.phases.keys())
-                
-                st.markdown("**Database Info:**")
-                st.markdown(f"- **Elements:** {len(elements)}")
-                st.markdown(f"- **Phases:** {len(phases)}")
-                
-                with st.expander("View details", expanded=False):
-                    st.markdown(f"**Elements:** {', '.join(elements[:10])}{'...' if len(elements) > 10 else ''}")
-                    st.markdown(f"**Phases:** {', '.join(phases[:10])}{'...' if len(phases) > 10 else ''}")
-            
-            except Exception as e:
-                st.error(f"❌ Error loading database: {str(e)}")
-                st.session_state.dbf = None
-        else:
-            st.session_state.dbf = None
-    
-    def _render_system_configuration(self):
-        """Render system configuration section"""
-        self.key_manager.set_section_context("SYSTEM_CONFIG")
-        
-        dbf = st.session_state.dbf
-        if not dbf:
-            return
-        
-        elements = sorted([e for e in dbf.elements if e != 'VA'])
-        
-        # Element selection
-        selected_elements = st.multiselect(
-            "Select components:",
-            elements,
-            default=elements[:min(3, len(elements))],
-            help="Select elements for your alloy system",
-            key=self.key_manager.generate_key("multiselect", "components")
-        )
-        
-        if not selected_elements:
-            st.warning("Please select at least one element")
-            st.session_state.selected_elements = []
-            return
-        
-        st.session_state.selected_elements = selected_elements
-        
-        # Composition input with auto-balancing
-        st.markdown("**Composition Input:**")
-        st.caption(f"For {len(selected_elements)} components, specify {len(selected_elements)-1} values")
-        
-        composition = {}
-        total_so_far = 0.0
-        
-        for i, element in enumerate(selected_elements):
-            self.key_manager.set_section_context(f"COMP_{element}")
-            
-            if i < len(selected_elements) - 1:
-                max_val = 1.0 - total_so_far
-                fraction = st.number_input(
-                    f"X({element})",
-                    min_value=0.0,
-                    max_value=float(max_val),
-                    value=float(1.0/len(selected_elements)),
-                    step=0.01,
-                    key=self.key_manager.generate_key("number_input", f"comp_{element}")
-                )
-                composition[element] = fraction
-                total_so_far += fraction
-            else:
-                # Last element
-                remaining = 1.0 - total_so_far
-                composition[element] = remaining
-                st.info(f"X({element}) = {remaining:.3f} (auto-calculated)")
-        
-        # Display composition summary
-        st.markdown("**Composition Summary:**")
-        comp_text = ""
-        for elem, frac in composition.items():
-            comp_text += f'<span class="component-badge">{elem}: {frac:.3f}</span> '
-        st.markdown(comp_text, unsafe_allow_html=True)
-        
-        # Validate composition
-        comp_sum = sum(composition.values())
-        if abs(comp_sum - 1.0) > 0.001:
-            st.error(f"❌ Composition sum = {comp_sum:.4f} (must be 1.0)")
-            st.session_state.composition = None
-            return
-        
-        st.session_state.composition = composition
-    
-    def _render_calculation_parameters(self):
-        """Render calculation parameters section"""
-        self.key_manager.set_section_context("CALC_PARAMS")
-        
-        # Temperature settings
-        st.markdown("**Temperature Range:**")
-        temp_mode = st.radio("Mode:", ["Single", "Range"], 
-                           horizontal=True,
-                           key=self.key_manager.generate_key("radio", "temp_mode"))
-        
-        if temp_mode == "Single":
-            T_value = st.number_input(
-                "Temperature (K)", 
-                100, 5000, 1000,
-                key=self.key_manager.generate_key("number_input", "temp_single")
-            )
-            T_condition = T_value
-            T_display = f"{T_value} K"
-        else:
-            col_t1, col_t2, col_t3 = st.columns(3)
-            with col_t1:
-                T_start = st.number_input(
-                    "Start (K)", 
-                    100, 5000, 300,
-                    key=self.key_manager.generate_key("number_input", "temp_start")
-                )
-            with col_t2:
-                T_end = st.number_input(
-                    "End (K)", 
-                    T_start, 6000, 1500,
-                    key=self.key_manager.generate_key("number_input", "temp_end")
-                )
-            with col_t3:
-                T_step = st.number_input(
-                    "Step (K)", 
-                    1, 200, 10,
-                    key=self.key_manager.generate_key("number_input", "temp_step")
-                )
-            T_condition = (T_start, T_end, T_step)
-            T_display = f"{T_start}-{T_end} K, step={T_step}"
-        
-        # Pressure
-        P_value = st.number_input(
-            "Pressure (Pa)", 
-            1000, 10000000, 101325,
-            key=self.key_manager.generate_key("number_input", "pressure")
-        )
-        
-        # Phase selection
-        st.markdown("**Phase Selection:**")
-        dbf = st.session_state.dbf
-        if dbf:
-            phases = sorted(dbf.phases.keys())
-            selected_phases = st.multiselect(
-                "Select phases for equilibrium:",
-                phases,
-                default=phases[:min(2, len(phases))],
-                key=self.key_manager.generate_key("multiselect", "phases")
-            )
-            
-            if not selected_phases:
-                st.warning("Please select at least one phase")
-                st.session_state.selected_phases = []
-                return
-            
-            st.session_state.selected_phases = selected_phases
-        
-        # Advanced options
-        with st.expander("⚙️ Advanced Options", expanded=False):
-            self.key_manager.set_section_context("ADVANCED_OPTIONS")
-            
-            calc_mode = st.selectbox(
-                "Calculation mode",
-                ["Fast", "Accurate", "Very Accurate"],
-                index=1,
-                key=self.key_manager.generate_key("selectbox", "calc_mode")
-            )
-            
-            output_variable = st.selectbox(
-                "Output variable",
-                ["HM", "GM", "SM", "CPM"],
-                index=0,
-                help="HM: Enthalpy, GM: Gibbs energy, SM: Entropy, CPM: Heat capacity",
-                key=self.key_manager.generate_key("selectbox", "output_var")
-            )
-        
-        st.session_state.temperature_condition = T_condition
-        st.session_state.temperature_display = T_display
-        st.session_state.pressure = P_value
-        st.session_state.output_variable = output_variable
-    
-    def _perform_dof_validation(self):
-        """Perform DOF validation"""
-        selected_elements = st.session_state.get('selected_elements', [])
-        selected_phases = st.session_state.get('selected_phases', [])
-        composition = st.session_state.get('composition', {})
-        temperature_condition = st.session_state.get('temperature_condition', 1000)
-        pressure = st.session_state.get('pressure', 101325)
-        
-        if not selected_elements or not selected_phases or not composition:
-            st.warning("Please complete system configuration first")
-            return
-        
-        # Build conditions
-        conditions = {
-            v.T: temperature_condition,
-            v.P: pressure
-        }
-        
-        # Add composition conditions (n-1)
-        for i, (element, fraction) in enumerate(composition.items()):
-            if i < len(selected_elements) - 1:  # Only first n-1
-                conditions[v.X(element)] = fraction
-        
-        components_with_va = selected_elements + ['VA']
-        
-        # Perform DOF analysis
-        dof_analysis = self.analyzer.analyze_degrees_of_freedom(
-            components_with_va, selected_phases, conditions
-        )
-        
-        validation = self.analyzer.validate_equilibrium_conditions(
-            components_with_va, selected_phases, conditions
-        )
-        
-        # Display analysis
-        col_val1, col_val2 = st.columns([2, 1])
-        
-        with col_val1:
-            if dof_analysis['is_valid'] and validation['is_valid']:
-                st.markdown('<div class="dof-indicator dof-correct">✅ SYSTEM VALID - Ready for calculation!</div>', 
-                          unsafe_allow_html=True)
-            elif dof_analysis['is_under_specified']:
-                st.markdown('<div class="dof-indicator dof-warning">⚠️ UNDER-CONSTRAINED - Fix before calculation</div>', 
-                          unsafe_allow_html=True)
-            else:
-                st.markdown('<div class="dof-indicator dof-error">❌ OVER-CONSTRAINED - Fix before calculation</div>', 
-                          unsafe_allow_html=True)
-        
-        with col_val2:
-            st.metric("Degrees of Freedom", dof_analysis['actual_F'], 
-                     delta="Target: 0", delta_color="normal" if dof_analysis['actual_F'] == 0 else "off")
-        
-        # Show validation details
-        if validation['errors']:
-            st.error("**Validation Errors:**")
-            for error in validation['errors']:
-                st.error(error)
-        
-        if validation['warnings']:
-            st.warning("**Validation Warnings:**")
-            for warning in validation['warnings']:
-                st.warning(warning)
-        
-        # Store conditions for calculation
-        st.session_state.conditions = conditions
-        st.session_state.dof_analysis = dof_analysis
-        st.session_state.validation = validation
-        st.session_state.components_with_va = components_with_va
-    
-    def _render_calculation_button(self):
-        """Render calculation button with validation"""
-        dof_analysis = st.session_state.get('dof_analysis', {})
-        validation = st.session_state.get('validation', {})
-        
-        calculate_enabled = (dof_analysis.get('is_valid', False) and 
-                           validation.get('is_valid', False))
-        
-        if calculate_enabled:
-            if st.button("🚀 Calculate Enthalpy", 
-                        type="primary", 
-                        use_container_width=True,
-                        key="calculate_button"):
-                self._perform_calculation()
-        else:
-            st.button("🚀 Calculate Enthalpy", 
-                     use_container_width=True, 
-                     disabled=True,
-                     help="Fix DOF issues before calculation")
-            
-            # Show what needs to be fixed
-            st.markdown("### 🔧 Fix Required Before Calculation")
-            
-            dof_analysis = st.session_state.get('dof_analysis', {})
-            if dof_analysis.get('is_under_specified'):
-                st.error(f"**Under-constrained:** Need {dof_analysis.get('theoretical_F', 0) - dof_analysis.get('specified_vars', {}).get('independent_intensive', 0)} more intensive variable(s)")
-            
-            if dof_analysis.get('is_over_specified'):
-                st.error(f"**Over-constrained:** Remove {dof_analysis.get('specified_vars', {}).get('independent_intensive', 0) - dof_analysis.get('theoretical_F', 0)} constraint(s)")
-            
-            # Provide specific suggestions
-            suggestions = self.analyzer._generate_fix_suggestions(
-                st.session_state.get('selected_elements', []),
-                st.session_state.get('selected_phases', []),
-                st.session_state.get('conditions', {}),
-                st.session_state.get('dof_analysis', {}).get('specified_vars', {}).get('compositions', {})
-            )
-            
-            if suggestions:
-                st.markdown("**Suggestions:**")
-                for suggestion in suggestions:
-                    st.markdown(suggestion)
-    
-    def _perform_calculation(self):
-        """Perform the equilibrium calculation"""
-        dbf = st.session_state.dbf
-        components_with_va = st.session_state.components_with_va
-        selected_phases = st.session_state.selected_phases
-        conditions = st.session_state.conditions
-        output_variable = st.session_state.output_variable
-        
-        with st.spinner("Performing equilibrium calculation..."):
-            try:
-                # Perform equilibrium calculation
-                eq_result = equilibrium(
-                    dbf,
-                    components_with_va,
-                    selected_phases,
-                    conditions,
-                    output=output_variable,
-                    verbose=False
-                )
-                
-                # Extract results
-                T_values = eq_result.T.values.flatten()
-                result_values = eq_result[output_variable].values.flatten()
-                
-                # Create DataFrame
-                result_df = pd.DataFrame({
-                    'Temperature_K': T_values,
-                    f'{output_variable}_J_mol': result_values
-                })
-                
-                result_df = result_df.dropna().sort_values('Temperature_K')
-                
-                if len(result_df) == 0:
-                    st.error("❌ Calculation returned no valid results")
-                    return
-                
-                # Rename enthalpy column for consistency
-                if output_variable == 'HM':
-                    result_df = result_df.rename(columns={'HM_J_mol': 'Enthalpy_J_mol'})
-                    
-                    # Add specific enthalpy
-                    composition = st.session_state.composition
-                    result_df = self.analyzer.convert_to_specific_enthalpy(result_df, composition)
-                
-                # Store results
-                selected_elements = st.session_state.selected_elements
-                material_name = f"{'-'.join([e for e in selected_elements[:3]])}"
-                if len(selected_elements) > 3:
-                    material_name += f"-{len(selected_elements)-3}more"
-                
-                result_info = {
-                    'name': material_name,
-                    'composition': st.session_state.composition,
-                    'data': result_df,
-                    'phases': selected_phases,
-                    'tdb_file': os.path.basename(st.session_state.tdb_path),
-                    'temperature_range': (st.session_state.temperature_condition 
-                                       if isinstance(st.session_state.temperature_condition, tuple) 
-                                       else (st.session_state.temperature_condition, 
-                                             st.session_state.temperature_condition, 1)),
-                    'output_variable': output_variable,
-                    'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                }
-                self.analyzer.results_history.append(result_info)
-                
-                st.success(f"✅ Calculation successful! Generated {len(result_df)} data points")
-                
-                # Visualization
-                self._display_results(result_df, material_name, output_variable)
-                
-                # Key metrics
-                self._display_key_metrics(result_df, output_variable)
-                
-                # Download options
-                self._render_download_options(result_df, material_name)
-            
-            except Exception as e:
-                st.error(f"❌ Calculation error: {str(e)}")
-                st.code(traceback.format_exc(), language='python')
-                
-                # Provide specific help for DOF errors
-                if "degrees of freedom is not zero" in str(e):
-                    st.markdown("### 🆘 DOF Error Detected!")
-                    st.markdown("""
-                    Even though our analysis showed F=0, pycalphad still encountered a DOF error.
-                    This can happen because:
-                    
-                    1. **Phase stability issues**: Selected phases might not be stable at given conditions
-                    2. **Database limitations**: Some phases might not be defined for all compositions
-                    3. **Numerical issues** in the starting point calculation
-                    
-                    **Try:**
-                    1. Use different phases
-                    2. Adjust temperature range
-                    3. Try different composition
-                    4. Check the DOF Analyzer tab for detailed diagnosis
-                    """)
-    
-    def _display_results(self, result_df, material_name, output_variable):
-        """Display calculation results"""
-        fig, ax = plt.subplots(figsize=(12, 8), dpi=150)
-        
-        if output_variable == 'HM':
-            ax.plot(result_df['Temperature_K'], result_df['Enthalpy_J_mol'], 
-                   'b-', linewidth=2.5, marker='o', markersize=4, 
-                   markevery=max(1, len(result_df)//20))
-            ax.set_ylabel('Enthalpy (J/mol)', fontweight='bold')
-            ax.set_title(f'Enthalpy vs Temperature - {material_name}', fontweight='bold')
-            
-            # Add specific enthalpy on secondary axis
-            ax2 = ax.twinx()
-            ax2.plot(result_df['Temperature_K'], result_df['Enthalpy_J_kg'], 
-                    'r-', linewidth=2, alpha=0.7, linestyle='--')
-            ax2.set_ylabel('Specific Enthalpy (J/kg)', fontweight='bold', color='r')
-            ax2.tick_params(axis='y', labelcolor='r')
-        else:
-            ax.plot(result_df['Temperature_K'], result_df[f'{output_variable}_J_mol'], 
-                   'g-', linewidth=2.5)
-            ax.set_ylabel(f'{output_variable} (J/mol)', fontweight='bold')
-            ax.set_title(f'{output_variable} vs Temperature - {material_name}', fontweight='bold')
-        
-        ax.set_xlabel('Temperature (K)', fontweight='bold')
-        ax.grid(True, alpha=0.3)
-        
-        plt.tight_layout()
-        st.pyplot(fig)
-    
-    def _display_key_metrics(self, result_df, output_variable):
-        """Display key metrics"""
-        col_m1, col_m2, col_m3 = st.columns(3)
-        
-        with col_m1:
-            if output_variable == 'HM':
-                min_val = result_df['Enthalpy_J_mol'].min()
-                max_val = result_df['Enthalpy_J_mol'].max()
-                st.metric("Min Enthalpy", f"{min_val:,.0f} J/mol")
-        
-        with col_m2:
-            if output_variable == 'HM':
-                st.metric("Max Enthalpy", f"{max_val:,.0f} J/mol")
-        
-        with col_m3:
-            if output_variable == 'HM':
-                delta = max_val - min_val
-                st.metric("ΔH", f"{delta:,.0f} J/mol")
-    
-    def _render_download_options(self, result_df, material_name):
-        """Render download options"""
-        st.markdown("---")
-        st.subheader("📥 Download Results")
-        
-        col_dl1, col_dl2 = st.columns(2)
-        
-        with col_dl1:
-            csv_data = result_df.to_csv(index=False)
-            st.download_button(
-                "📄 Download CSV",
-                data=csv_data,
-                file_name=f"results_{material_name}.csv",
-                mime="text/csv",
-                use_container_width=True,
-                key="download_csv"
-            )
-        
-        with col_dl2:
-            # Create comprehensive report
-            report = {
-                'material': material_name,
-                'composition': st.session_state.composition,
-                'conditions': {
-                    'temperature': st.session_state.temperature_display,
-                    'pressure': f"{st.session_state.pressure} Pa",
-                    'phases': st.session_state.selected_phases
-                },
-                'data': result_df.to_dict('records')
-            }
-            
-            json_data = json.dumps(report, indent=4)
-            st.download_button(
-                "📁 Download JSON Report",
-                data=json_data,
-                file_name=f"report_{material_name}.json",
-                mime="application/json",
-                use_container_width=True,
-                key="download_json"
-            )
-
-class Tab4Content:
-    """Content for Tab 4: Curve Fitting - with proper widget key management"""
-    
-    def __init__(self, analyzer):
-        self.analyzer = analyzer
-        self.key_manager = analyzer.key_manager
-        self.key_manager.set_tab_context("CURVE_FITTING")
-    
-    def render(self):
-        """Render the entire Curve Fitting tab"""
-        st.header("📊 Curve Fitting & Analysis")
-        
-        if not self.analyzer.results_history:
-            st.info("💡 No computed data available. Please perform calculations in the 'Enthalpy Computation' tab first.")
-            return
-        
-        # Data selection
-        st.subheader("📈 Select Data for Fitting")
-        
-        result_options = [
-            f"{i+1}. {res['name']} | {res['tdb_file']} | {len(res['data'])} pts"
-            for i, res in enumerate(self.analyzer.results_history)
-        ]
-        
-        self.key_manager.set_section_context("DATA_SELECTION")
-        selected_idx = st.selectbox(
-            "Select computed result:",
-            range(len(result_options)),
-            format_func=lambda x: result_options[x],
-            index=len(result_options)-1,
-            key=self.key_manager.generate_key("selectbox", "result_select")
-        )
-        
-        result = self.analyzer.results_history[selected_idx]
-        data = result['data']
-        
-        # Check if we have enthalpy data
-        if 'Enthalpy_J_mol' not in data.columns:
-            st.error("Selected data doesn't contain enthalpy. Please use 'HM' output in calculations.")
-            return
-        
-        T_data = data['Temperature_K'].values
-        H_data = data['Enthalpy_J_mol'].values
-        
-        # Display data info
-        col_info1, col_info2, col_info3 = st.columns(3)
-        
-        with col_info1:
-            st.metric("Data Points", len(T_data))
-        
-        with col_info2:
-            st.metric("Temperature Range", f"{T_data.min():.0f}-{T_data.max():.0f} K")
-        
-        with col_info3:
-            delta_H = H_data.max() - H_data.min()
-            st.metric("ΔH Range", f"{delta_H:,.0f} J/mol")
-        
-        # Fitting parameters
-        st.markdown("---")
-        st.subheader("⚙️ Fitting Parameters")
-        
-        # Smart initial guesses
-        T_range = T_data.max() - T_data.min()
-        H_range = H_data.max() - H_data.min()
-        H_slope = H_range / T_range if T_range > 0 else 1.0
-        T_mid = (T_data.max() + T_data.min()) / 2
-        
-        col_fit1, col_fit2 = st.columns(2)
-        
-        with col_fit1:
-            self.key_manager.set_section_context("FIT_PARAMS_1")
-            A1_guess = st.number_input(
-                "A₁ initial (J/mol·K)", 
-                -200.0, 200.0, 
-                float(max(5.0, min(50.0, H_slope * 0.5))), 
-                0.1,
-                key=self.key_manager.generate_key("number_input", "A1_guess")
-            )
-            A2_guess = st.number_input(
-                "A₂ initial (J/mol·K)", 
-                -200.0, 200.0, 
-                float(max(1.0, min(30.0, H_slope * 0.2))), 
-                0.1,
-                key=self.key_manager.generate_key("number_input", "A2_guess")
-            )
-            Tm_guess = st.number_input(
-                "Tₘ initial (K)", 
-                float(T_data.min()), float(T_data.max()), 
-                float(T_mid), 
-                1.0,
-                key=self.key_manager.generate_key("number_input", "Tm_guess")
-            )
-        
-        with col_fit2:
-            self.key_manager.set_section_context("FIT_PARAMS_2")
-            DeltaHf_guess = st.number_input(
-                "ΔHf initial (J/mol)", 
-                -100000.0, 100000.0, 
-                float(max(5000.0, min(50000.0, H_range * 0.3))), 
-                100.0,
-                key=self.key_manager.generate_key("number_input", "DeltaHf_guess")
-            )
-            k_guess = st.number_input(
-                "k initial (1/K)", 
-                0.0001, 1.0, 
-                0.01, 
-                0.001,
-                key=self.key_manager.generate_key("number_input", "k_guess")
-            )
-            H298_guess = st.number_input(
-                "H₂₉₈ initial (J/mol)", 
-                -100000.0, 100000.0, 
-                float(H_data.min() * 0.9), 
-                100.0,
-                key=self.key_manager.generate_key("number_input", "H298_guess")
-            )
-        
-        # Fit button
-        self.key_manager.set_section_context("FIT_BUTTON")
-        if st.button("🎯 Perform Curve Fit", 
-                    type="primary", 
-                    use_container_width=True,
-                    key=self.key_manager.generate_key("button", "perform_fit")):
-            self._perform_curve_fitting(T_data, H_data, result, 
-                                       A1_guess, A2_guess, Tm_guess, 
-                                       DeltaHf_guess, k_guess, H298_guess)
-    
-    def _perform_curve_fitting(self, T_data, H_data, result, 
-                              A1_guess, A2_guess, Tm_guess, 
-                              DeltaHf_guess, k_guess, H298_guess):
-        """Perform curve fitting and display results"""
-        with st.spinner("Fitting curve to data..."):
-            try:
-                initial_guess = [A1_guess, A2_guess, Tm_guess, DeltaHf_guess, k_guess, H298_guess]
-                
-                # Bounds
-                lower_bounds = [-500, -500, T_data.min() * 0.8, 0, 1e-6, -1e6]
-                upper_bounds = [500, 500, T_data.max() * 1.2, 1e6, 1.0, 1e6]
-                
-                fit_params, pcov = curve_fit(
-                    self.analyzer.enthalpy_equation,
-                    T_data,
-                    H_data,
-                    p0=initial_guess,
-                    bounds=(lower_bounds, upper_bounds),
-                    maxfev=10000
-                )
-                
-                A1_fit, A2_fit, Tm_fit, DeltaHf_fit, k_fit, H298_fit = fit_params
-                
-                # Generate fitted curve
-                T_fit = np.linspace(T_data.min(), T_data.max(), 1000)
-                H_fit = self.analyzer.enthalpy_equation(T_fit, *fit_params)
-                
-                # Calculate statistics
-                H_pred = self.analyzer.enthalpy_equation(T_data, *fit_params)
-                residuals = H_data - H_pred
-                ss_res = np.sum(residuals**2)
-                ss_tot = np.sum((H_data - np.mean(H_data))**2)
-                r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
-                rmse = np.sqrt(np.mean(residuals**2))
-                
-                # Store results
-                fit_result = {
-                    'material_name': result['name'],
-                    'coefficients': {
-                        'A1': A1_fit,
-                        'A2': A2_fit,
-                        'Tm': Tm_fit,
-                        'DeltaHf': DeltaHf_fit,
-                        'k': k_fit,
-                        'H298': H298_fit
-                    },
-                    'statistics': {
-                        'r_squared': r_squared,
-                        'rmse': rmse,
-                        'data_points': len(T_data)
-                    },
-                    'composition': result['composition'],
-                    'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                }
-                self.analyzer.fitting_results.append(fit_result)
-                
-                st.success(f"✅ Fitting completed! R² = {r_squared:.6f}, RMSE = {rmse:.2f} J/mol")
-                
-                # Visualization
-                self._display_fitting_results(T_data, H_data, T_fit, H_fit, 
-                                            residuals, result['name'])
-                
-                # Display equation
-                st.markdown("### 🧮 Fitted Equation")
-                st.latex(rf"""
-                H(T) = {A1_fit:.3f} \cdot T + {A2_fit:.3f} \cdot \max(T - {Tm_fit:.1f}, 0) + 
-                {DeltaHf_fit:,.0f} \cdot \frac{{1}}{{1 + e^{{-{k_fit:.5f}(T - {Tm_fit:.1f})}}}} + {H298_fit:,.0f}
-                """)
-            
-            except Exception as e:
-                st.error(f"❌ Fitting error: {str(e)}")
-    
-    def _display_fitting_results(self, T_data, H_data, T_fit, H_fit, residuals, material_name):
-        """Display fitting results visualization"""
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), dpi=150)
-        
-        # Main fit
-        ax1.scatter(T_data, H_data, alpha=0.6, label='Data', 
-                   color='blue', s=40)
-        ax1.plot(T_fit, H_fit, 'r-', linewidth=2.5, label='Fit')
-        ax1.set_xlabel('Temperature (K)', fontweight='bold')
-        ax1.set_ylabel('Enthalpy (J/mol)', fontweight='bold')
-        ax1.set_title(f'Enthalpy-Temperature Fit - {material_name}', 
-                     fontweight='bold')
-        ax1.legend()
-        ax1.grid(True, alpha=0.3)
-        
-        # Residuals
-        ax2.scatter(T_data, residuals, alpha=0.6, color='green', s=30)
-        ax2.axhline(y=0, color='r', linestyle='--', alpha=0.7)
-        ax2.set_xlabel('Temperature (K)', fontweight='bold')
-        ax2.set_ylabel('Residuals (J/mol)', fontweight='bold')
-        ax2.set_title('Residuals', fontweight='bold')
-        ax2.grid(True, alpha=0.3)
-        
-        plt.tight_layout()
-        st.pyplot(fig)
-
-class Tab5Content:
-    """Content for Tab 5: Settings & Help - with proper widget key management"""
-    
-    def __init__(self, analyzer):
-        self.analyzer = analyzer
-        self.key_manager = analyzer.key_manager
-        self.key_manager.set_tab_context("SETTINGS_HELP")
-    
-    def render(self):
-        """Render the entire Settings & Help tab"""
-        st.header("⚙️ Settings & Comprehensive Help")
-        
-        col_set1, col_set2 = st.columns([1, 1])
-        
-        with col_set1:
-            self._render_help_section()
-        
-        with col_set2:
-            self._render_settings_section()
-    
-    def _render_help_section(self):
-        """Render help section"""
-        st.subheader("📖 Complete DOF Error Guide")
-        
-        with st.expander("❓ What is 'Number of degrees of freedom is not zero'?", expanded=True):
-            st.markdown("""
-            **This is a thermodynamic consistency error from pycalphad's `equilibrium()` function.**
-            
-            It means: **Your system is not fully determined for equilibrium calculation.**
-            
-            ### 🔬 Thermodynamic Meaning:
-            
-            From the **Gibbs Phase Rule**:
-            ```
-            F = C - P + 2
-            ```
-            
-            - **F** = Degrees of Freedom (must be 0 for equilibrium)
-            - **C** = Number of Components (real elements, excluding VA)
-            - **P** = Number of Phases
-            - **2** = Temperature + Pressure (always count as 2 intensive variables)
-            
-            **For `equilibrium()` to work:**
-            ```
-            F = 0  ← You must have exactly 0 degrees of freedom!
-            ```
-            
-            Which means you must specify:
-            ```
-            Number of specified intensive variables = C - P + 2
-            ```
-            """)
-        
-        with st.expander("🎯 Exactly What to Specify", expanded=False):
-            st.markdown("""
-            ### For N-component system:
-            
-            **ALWAYS specify:**
-            1. **Temperature (T)** - in Kelvin
-            2. **Pressure (P)** - in Pascals
-            
-            **For composition (CRITICAL PART):**
-            - **Specify exactly N-1 mole fractions**
-            - **DO NOT specify all N compositions**
-            - **DO NOT let compositions sum to > 1.0**
-            
-            ### Examples:
-            
-            **Binary (2 components):**
-            ```python
-            # CORRECT - Specify 1 composition
-            conditions = {
-                v.T: 1000,
-                v.P: 101325,
-                v.X('AL'): 0.7  # CU is implicit: 1 - 0.7 = 0.3
-            }
-            ```
-            
-            **Ternary (3 components):**
-            ```python
-            # CORRECT - Specify 2 compositions
-            conditions = {
-                v.T: 1000,
-                v.P: 101325,
-                v.X('AL'): 0.6,
-                v.X('CU'): 0.2  # NI is implicit: 1 - 0.6 - 0.2 = 0.2
-            }
-            ```
-            
-            **Unary (1 component):**
-            ```python
-            # CORRECT - No composition needed
-            conditions = {
-                v.T: 1000,
-                v.P: 101325
-            }
-            ```
-            """)
-        
-        with st.expander("🚫 Common Mistakes & Fixes", expanded=False):
-            st.markdown("""
-            ### ❌ MISTAKE 1: Missing T or P
-            ```python
-            # WRONG - No temperature!
-            conditions = {
-                v.P: 101325,
-                v.X('AL'): 0.7
-            }
-            ```
-            **FIX:** Always include both `v.T` and `v.P`
-            
-            ### ❌ MISTAKE 2: Specifying all compositions
-            ```python
-            # WRONG - Specifying all 3 for ternary
-            conditions = {
-                v.T: 1000,
-                v.P: 101325,
-                v.X('AL'): 0.6,
-                v.X('CU'): 0.2,
-                v.X('NI'): 0.2  # REDUNDANT! Sums to 1.0
-            }
-            ```
-            **FIX:** Specify only N-1 compositions
-            
-            ### ❌ MISTAKE 3: Using v.N unnecessarily
-            ```python
-            # WRONG - v.N is not needed
-            conditions = {
-                v.T: 1000,
-                v.P: 101325,
-                v.X('AL'): 0.7,
-                v.N: 1  # pycalphad assumes N=1 by default
-            }
-            ```
-            **FIX:** Remove `v.N` unless you specifically need to vary total moles
-            
-            ### ❌ MISTAKE 4: Composition sum > 1.0
-            ```python
-            # WRONG - Sum > 1.0
-            conditions = {
-                v.T: 1000,
-                v.P: 101325,
-                v.X('AL'): 0.8,
-                v.X('CU'): 0.3  # Sum = 1.1 > 1.0!
-            }
-            ```
-            **FIX:** Ensure sum of specified compositions ≤ 1.0
-            """)
-        
-        with st.expander("🔧 Debugging Steps", expanded=False):
-            st.markdown("""
-            ### Step-by-Step Debugging:
-            
-            1. **Count your components (C)**
-               ```python
-               real_components = [c for c in components if c != 'VA']
-               C = len(real_components)
-               ```
-            
-            2. **Count your phases (P)**
-               ```python
-               P = len(phases)
-               ```
-            
-            3. **Calculate required variables**
-               ```python
-               required_vars = C - P + 2
-               ```
-            
-            4. **Count what you're specifying**
-               - +1 for `v.T`
-               - +1 for `v.P`  
-               - +1 for each independent `v.X(element)`
-            
-            5. **Check:**
-               ```
-               If specified = required: ✅ Good to go!
-               If specified < required: ❌ Under-constrained
-               If specified > required: ❌ Over-constrained
-               ```
-            
-            6. **Print your conditions:**
-               ```python
-               print("Conditions:")
-               for k, v in conditions.items():
-                   print(f"  {k}: {v}")
-               ```
-            """)
-    
-    def _render_settings_section(self):
-        """Render settings section"""
-        st.subheader("⚙️ Application Management")
-        
-        # Database management
-        st.markdown("#### 📁 Database Management")
-        
-        tdb_files = self.analyzer.get_available_tdb_files()
-        if tdb_files:
-            st.write(f"**Found {len(tdb_files)} TDB files:**")
-            
-            for tdb in tdb_files:
-                col_t1, col_t2 = st.columns([3, 1])
-                with col_t1:
-                    st.caption(f"`{tdb}`")
-                with col_t2:
-                    self.key_manager.set_section_context(f"DELETE_{tdb}")
-                    if st.button("🗑️", 
-                               key=self.key_manager.generate_key("button", f"delete_{tdb}"),
-                               help="Delete"):
-                        try:
-                            (self.analyzer.database_dir / tdb).unlink()
-                            st.success(f"Deleted {tdb}")
-                            st.rerun()
-                        except:
-                            st.error("Error deleting")
-        else:
-            st.info("No TDB files in database directory")
-        
-        # TDB upload
-        st.markdown("#### 📤 Upload TDB Files")
-        self.key_manager.set_section_context("UPLOAD_TDB")
-        uploaded = st.file_uploader(
-            "Upload TDB", 
-            type=["tdb", "TDB"], 
-            key=self.key_manager.generate_key("file_uploader", "tdb_upload")
-        )
-        if uploaded:
-            self.analyzer.save_uploaded_tdb(uploaded)
-            st.rerun()
-        
-        # Session management
-        st.markdown("#### 🗑️ Session Management")
-        
-        col_sess1, col_sess2 = st.columns(2)
-        with col_sess1:
-            self.key_manager.set_section_context("CLEAR_DATA")
-            if st.button("Clear All Data", 
-                        use_container_width=True, 
-                        type="secondary",
-                        key=self.key_manager.generate_key("button", "clear_data")):
-                self.analyzer.results_history = []
-                self.analyzer.fitting_results = []
-                st.success("Data cleared!")
-                st.rerun()
-        
-        with col_sess2:
-            self.key_manager.set_section_context("RESET_APP")
-            if st.button("Reset Application", 
-                        use_container_width=True, 
-                        type="secondary",
-                        key=self.key_manager.generate_key("button", "reset_app")):
-                for key in list(st.session_state.keys()):
-                    del st.session_state[key]
-                st.success("Application reset!")
-                st.rerun()
-        
-        # About section
-        st.markdown("---")
-        st.subheader("ℹ️ About")
-        
-        st.markdown("""
-        **Thermodynamic Enthalpy Analyzer Pro v3.0**
-        
-        *With Intelligent DOF Error Prevention*
-        
-        **Key Features:**
-        - 🛡️ **DOF Error Prevention**: Gibbs Phase Rule validation
-        - 🔬 **Smart Composition Handling**: Auto-balancing for n-component systems
-        - 📊 **Comprehensive Analysis**: Phase diagrams, curve fitting, comparison
-        - 🎯 **Minimal Working Examples**: Auto-generated code for quick fixes
-        
-        **Technical Stack:**
-        - **CALPHAD Engine**: pycalphad
-        - **Numerical Methods**: scipy, numpy
-        - **Visualization**: matplotlib
-        - **Interface**: Streamlit
-        
-        **License**: MIT
-        **Version**: 3.0.0
-        """)
-
 def main():
     st.markdown('<h1 class="main-header">🔥 Thermodynamic Enthalpy Analyzer Pro</h1>', unsafe_allow_html=True)
     st.markdown("### Advanced CALPHAD Calculations with Gibbs Phase Rule Validation")
@@ -2558,9 +1017,6 @@ def main():
     
     analyzer = st.session_state.analyzer
     
-    # Reset key manager counter at the start of each run
-    analyzer.key_manager.reset_counter()
-    
     # Create enhanced tabs
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "🏠 Dashboard",
@@ -2572,8 +1028,6 @@ def main():
     
     # ==================== TAB 1: Dashboard ====================
     with tab1:
-        analyzer.key_manager.set_tab_context("DASHBOARD")
-        
         st.header("🏠 Thermodynamic System Dashboard")
         
         # Quick stats
@@ -2673,27 +1127,17 @@ conditions = {
         col_act1, col_act2, col_act3 = st.columns(3)
         
         with col_act1:
-            analyzer.key_manager.set_section_context("QUICK_UPLOAD")
-            if st.button("📁 Upload New TDB", 
-                        use_container_width=True,
-                        key=analyzer.key_manager.generate_key("button", "quick_upload")):
+            if st.button("📁 Upload New TDB", use_container_width=True):
                 st.session_state.active_tab = "🔬 Computation"
                 st.rerun()
         
         with col_act2:
-            analyzer.key_manager.set_section_context("QUICK_ANALYZE")
-            if st.button("⚖️ Analyze DOF", 
-                        use_container_width=True,
-                        key=analyzer.key_manager.generate_key("button", "quick_analyze")):
+            if st.button("⚖️ Analyze DOF", use_container_width=True):
                 st.session_state.active_tab = "⚖️ DOF Analyzer"
                 st.rerun()
         
         with col_act3:
-            analyzer.key_manager.set_section_context("QUICK_CLEAR")
-            if st.button("🔄 Clear Session", 
-                        type="secondary", 
-                        use_container_width=True,
-                        key=analyzer.key_manager.generate_key("button", "quick_clear")):
+            if st.button("🔄 Clear Session", type="secondary", use_container_width=True):
                 analyzer.results_history = []
                 analyzer.fitting_results = []
                 st.success("Session data cleared!")
@@ -2701,23 +1145,1208 @@ conditions = {
     
     # ==================== TAB 2: DOF Analyzer ====================
     with tab2:
-        tab2_content = Tab2Content(analyzer)
-        tab2_content.render()
+        st.header("⚖️ Degrees of Freedom Analyzer")
+        st.markdown("**Diagnose and fix 'Number of degrees of freedom is not zero' errors**")
+        
+        col_ana1, col_ana2 = st.columns([1, 1])
+        
+        with col_ana1:
+            st.subheader("📋 System Configuration")
+            
+            # Manual input or load from TDB
+            config_source = st.radio(
+                "Configuration source:",
+                ["Manual input", "Load from TDB file"],
+                horizontal=True
+            )
+            
+            if config_source == "Load from TDB file":
+                available_tdb = analyzer.get_available_tdb_files()
+                if not available_tdb:
+                    st.info("No TDB files found. Please upload one in the Settings tab.")
+                    selected_tdb = None
+                else:
+                    selected_tdb = st.selectbox(
+                        "Select TDB file:",
+                        available_tdb
+                    )
+                    
+                    if selected_tdb:
+                        tdb_path = analyzer.database_dir / selected_tdb
+                        try:
+                            dbf = Database(str(tdb_path))
+                            elements = sorted([e for e in dbf.elements if e != 'VA'])
+                            phases = sorted(dbf.phases.keys())
+                            
+                            # Auto-fill components and phases
+                            components = st.multiselect(
+                                "Components (select from TDB):",
+                                elements,
+                                default=elements[:min(2, len(elements))]
+                            )
+                            
+                            selected_phases = st.multiselect(
+                                "Phases (select from TDB):",
+                                phases,
+                                default=phases[:min(2, len(phases))]
+                            )
+                            
+                        except Exception as e:
+                            st.error(f"Error loading TDB: {str(e)}")
+                            components = []
+                            selected_phases = []
+            else:
+                # Manual input
+                st.markdown("**Enter Components:**")
+                comp_input = st.text_input(
+                    "Component symbols (comma-separated, e.g., AL, CU, NI):",
+                    "AL, CU"
+                )
+                components = [c.strip().upper() for c in comp_input.split(',') if c.strip()]
+                
+                st.markdown("**Enter Phases:**")
+                phase_input = st.text_input(
+                    "Phase names (comma-separated, e.g., LIQUID, FCC_A1):",
+                    "LIQUID, FCC_A1"
+                )
+                selected_phases = [p.strip().upper() for p in phase_input.split(',') if p.strip()]
+            
+            if not components:
+                st.warning("Please specify at least one component")
+                st.stop()
+            
+            if not selected_phases:
+                st.warning("Please specify at least one phase")
+                st.stop()
+            
+            # Add VA to components for calculation
+            components_with_va = components + ['VA']
+        
+        with col_ana2:
+            st.subheader("⚙️ Conditions Specification")
+            
+            # Temperature
+            temp_type = st.radio(
+                "Temperature specification:",
+                ["Single value", "Range"],
+                horizontal=True
+            )
+            
+            if temp_type == "Single value":
+                T_value = st.number_input("Temperature (K)", 100, 5000, 1000)
+                T_condition = T_value
+            else:
+                col_t1, col_t2, col_t3 = st.columns(3)
+                with col_t1:
+                    T_start = st.number_input("T start (K)", 100, 5000, 800)
+                with col_t2:
+                    T_end = st.number_input("T end (K)", T_start, 6000, 1500)
+                with col_t3:
+                    T_step = st.number_input("T step (K)", 1, 200, 10)
+                T_condition = (T_start, T_end, T_step)
+            
+            # Pressure
+            P_value = st.number_input("Pressure (Pa)", 1000, 10000000, 101325)
+            
+            # Composition specification
+            st.markdown("**Composition (mole fractions):**")
+            st.caption(f"For {len(components)} components, specify exactly {len(components)-1} independent compositions")
+            
+            composition = {}
+            remaining = 1.0
+            
+            for i, comp in enumerate(components):
+                if i < len(components) - 1:
+                    max_val = min(1.0, remaining)
+                    fraction = st.number_input(
+                        f"X({comp})",
+                        min_value=0.0,
+                        max_value=float(max_val),
+                        value=float(1.0/len(components)),
+                        step=0.01,
+                        key=f"dof_comp_{comp}"
+                    )
+                    composition[comp] = fraction
+                    remaining -= fraction
+                else:
+                    # Last component gets remaining
+                    st.info(f"X({comp}) = {remaining:.3f} (calculated)")
+                    composition[comp] = remaining
+            
+            # Build conditions dictionary
+            conditions = {
+                v.T: T_condition,
+                v.P: P_value
+            }
+            
+            # Add composition conditions (n-1 components)
+            for i, (comp, frac) in enumerate(composition.items()):
+                if i < len(components) - 1:  # Only first n-1
+                    conditions[v.X(comp)] = frac
+        
+        # Analyze button
+        st.markdown("---")
+        if st.button("🔬 Analyze Degrees of Freedom", type="primary", use_container_width=True):
+            with st.spinner("Analyzing thermodynamic system..."):
+                try:
+                    # Create dashboard visualization
+                    fig, dof_analysis = create_thermodynamic_dashboard(
+                        analyzer, components_with_va, selected_phases, conditions
+                    )
+                    
+                    st.pyplot(fig)
+                    
+                    # Display analysis results
+                    st.markdown("### 📊 Analysis Results")
+                    st.markdown(dof_analysis['message'], unsafe_allow_html=True)
+                    
+                    # Additional validation
+                    validation = analyzer.validate_equilibrium_conditions(
+                        components_with_va, selected_phases, conditions
+                    )
+                    
+                    if validation['errors']:
+                        st.markdown("### ❌ Validation Errors")
+                        for error in validation['errors']:
+                            st.error(error)
+                    
+                    if validation['warnings']:
+                        st.markdown("### ⚠️ Validation Warnings")
+                        for warning in validation['warnings']:
+                            st.warning(warning)
+                    
+                    if validation['suggestions']:
+                        st.markdown("### 💡 Suggestions for Fix")
+                        for suggestion in validation['suggestions']:
+                            st.markdown(suggestion)
+                    
+                    # Generate working example
+                    if not dof_analysis['is_valid']:
+                        st.markdown("### 🔧 Minimal Working Example")
+                        example = analyzer.create_minimal_working_example(
+                            components_with_va, selected_phases
+                        )
+                        
+                        with st.expander("View code template", expanded=False):
+                            st.code(example['code'], language='python')
+                        
+                        if st.button("📋 Copy to Clipboard", key="copy_example"):
+                            st.code(example['code'], language='python')
+                            st.success("Code copied! Paste it into your calculation.")
+                    
+                    # Test equilibrium if system is valid
+                    if dof_analysis['is_valid'] and validation['is_valid']:
+                        st.markdown("### 🎯 Ready for Equilibrium Calculation")
+                        
+                        # Show what will be passed to equilibrium
+                        st.markdown("**Final conditions for equilibrium():**")
+                        conds_display = []
+                        for key, value in conditions.items():
+                            if key == v.T:
+                                if isinstance(value, tuple):
+                                    conds_display.append(f"v.T: ({value[0]}, {value[1]}, {value[2]})")
+                                else:
+                                    conds_display.append(f"v.T: {value}")
+                            elif key == v.P:
+                                conds_display.append(f"v.P: {value}")
+                            elif 'X(' in str(key):
+                                element = str(key).split('(')[1].split(')')[0]
+                                conds_display.append(f"v.X('{element}'): {value:.3f}")
+                        
+                        for cond in conds_display:
+                            st.code(cond)
+                        
+                        st.success("✅ System is properly constrained! Ready for equilibrium calculation.")
+                        
+                        # Option to test with a TDB file
+                        test_tdb = st.selectbox(
+                            "Select TDB file to test:",
+                            [""] + analyzer.get_available_tdb_files()
+                        )
+                        
+                        if test_tdb and st.button("🧪 Test Equilibrium Calculation", type="secondary"):
+                            with st.spinner("Testing equilibrium calculation..."):
+                                try:
+                                    tdb_path = analyzer.database_dir / test_tdb
+                                    dbf_test = Database(str(tdb_path))
+                                    
+                                    # Check if selected phases exist in database
+                                    available_phases = sorted(dbf_test.phases.keys())
+                                    missing_phases = [p for p in selected_phases if p not in available_phases]
+                                    
+                                    if missing_phases:
+                                        st.warning(f"Phases not in database: {', '.join(missing_phases)}")
+                                        st.info(f"Available phases: {', '.join(available_phases[:5])}...")
+                                        # Use only available phases
+                                        selected_phases = [p for p in selected_phases if p in available_phases]
+                                    
+                                    # Perform equilibrium calculation
+                                    eq_result = equilibrium(
+                                        dbf_test,
+                                        components_with_va,
+                                        selected_phases,
+                                        conditions,
+                                        output='HM',
+                                        verbose=False
+                                    )
+                                    
+                                    st.success("✅ Equilibrium calculation successful!")
+                                    
+                                    # Display results
+                                    T_values = eq_result.T.values.flatten()
+                                    HM_values = eq_result.HM.values.flatten()
+                                    
+                                    result_df = pd.DataFrame({
+                                        'Temperature_K': T_values,
+                                        'Enthalpy_J_mol': HM_values
+                                    })
+                                    
+                                    result_df = result_df.dropna().sort_values('Temperature_K')
+                                    
+                                    if len(result_df) > 0:
+                                        st.metric("Data Points Generated", len(result_df))
+                                        
+                                        # Quick plot
+                                        fig_test, ax_test = plt.subplots(figsize=(10, 6))
+                                        ax_test.plot(result_df['Temperature_K'], result_df['Enthalpy_J_mol'], 
+                                                   'b-', linewidth=2, marker='o', markersize=4)
+                                        ax_test.set_xlabel('Temperature (K)', fontweight='bold')
+                                        ax_test.set_ylabel('Enthalpy (J/mol)', fontweight='bold')
+                                        ax_test.set_title('Test Equilibrium Calculation Result', fontweight='bold')
+                                        ax_test.grid(True, alpha=0.3)
+                                        st.pyplot(fig_test)
+                                        
+                                        # Store for later use
+                                        result_info = {
+                                            'name': f"Test: {test_tdb}",
+                                            'composition': composition,
+                                            'data': result_df,
+                                            'phases': selected_phases,
+                                            'tdb_file': test_tdb,
+                                            'temperature_range': (T_condition if isinstance(T_condition, tuple) else (T_condition, T_condition, 1)),
+                                            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                        }
+                                        analyzer.results_history.append(result_info)
+                                        
+                                        st.success("✅ Test calculation stored in history!")
+                                    else:
+                                        st.warning("Calculation completed but returned no valid data points.")
+                                
+                                except Exception as e:
+                                    st.error(f"❌ Test calculation failed: {str(e)}")
+                                    st.code(traceback.format_exc(), language='python')
+                
+                except Exception as e:
+                    st.error(f"❌ Analysis error: {str(e)}")
+                    st.code(traceback.format_exc(), language='python')
+        
+        # Quick reference
+        st.markdown("---")
+        st.subheader("📚 Quick Reference")
+        
+        col_ref1, col_ref2 = st.columns(2)
+        
+        with col_ref1:
+            st.markdown("**Rules for F = 0:**")
+            st.markdown("""
+            1. **Always specify T and P**
+            2. **For n components, specify n-1 compositions**
+            3. **Don't use v.N unless necessary**
+            4. **Ensure compositions sum ≤ 1.0**
+            5. **Last composition is implicit: 1 - sum(others)**
+            """)
+        
+        with col_ref2:
+            st.markdown("**Common Patterns:**")
+            st.markdown("""
+            - **Binary (2 components):** Specify 1 composition
+            - **Ternary (3 components):** Specify 2 compositions  
+            - **Quaternary (4 components):** Specify 3 compositions
+            - **Unary (1 component):** No composition needed
+            """)
     
     # ==================== TAB 3: Computation ====================
     with tab3:
-        tab3_content = Tab3Content(analyzer)
-        tab3_content.render()
+        st.header("🔬 Enthalpy Computation with DOF Protection")
+        
+        # File selection
+        st.subheader("📁 TDB File Selection")
+        
+        available_tdb = analyzer.get_available_tdb_files()
+        if not available_tdb:
+            st.info("No TDB files found. Using built-in examples...")
+            available_tdb = analyzer.get_available_tdb_files()
+        
+        col_file1, col_file2 = st.columns([1.2, 1])
+        
+        with col_file1:
+            tdb_source = st.radio(
+                "Source:",
+                ["Select from database", "Upload new TDB"],
+                horizontal=True
+            )
+            
+            tdb_path = None
+            
+            if tdb_source == "Select from database" and available_tdb:
+                selected_file = st.selectbox(
+                    "Available TDB files:",
+                    available_tdb,
+                    index=0
+                )
+                tdb_path = str(analyzer.database_dir / selected_file)
+                st.success(f"✅ Selected: **{selected_file}**")
+            
+            else:
+                uploaded_file = st.file_uploader(
+                    "Upload TDB file",
+                    type=["tdb", "TDB"],
+                    key="uploader_tab3"
+                )
+                
+                if uploaded_file:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.tdb') as tmp:
+                        tmp.write(uploaded_file.getbuffer())
+                        tdb_path = tmp.name
+                    
+                    st.success(f"✅ Uploaded: **{uploaded_file.name}**")
+            
+            if not tdb_path:
+                st.info("👈 Please select or upload a TDB file")
+                st.stop()
+        
+        with col_file2:
+            try:
+                dbf = Database(tdb_path)
+                
+                elements = sorted([e for e in dbf.elements if e != 'VA'])
+                phases = sorted(dbf.phases.keys())
+                
+                st.markdown("**Database Info:**")
+                st.markdown(f"- **Elements:** {len(elements)}")
+                st.markdown(f"- **Phases:** {len(phases)}")
+                
+                with st.expander("View details", expanded=False):
+                    st.markdown(f"**Elements:** {', '.join(elements[:10])}{'...' if len(elements) > 10 else ''}")
+                    st.markdown(f"**Phases:** {', '.join(phases[:10])}{'...' if len(phases) > 10 else ''}")
+            
+            except Exception as e:
+                st.error(f"❌ Error loading database: {str(e)}")
+                st.stop()
+        
+        # System configuration with DOF protection
+        st.markdown("---")
+        st.subheader("⚙️ System Configuration")
+        
+        col_conf1, col_conf2 = st.columns([1, 1])
+        
+        with col_conf1:
+            # Element selection
+            selected_elements = st.multiselect(
+                "Select components:",
+                elements,
+                default=elements[:min(3, len(elements))],
+                help="Select elements for your alloy system"
+            )
+            
+            if not selected_elements:
+                st.warning("Please select at least one element")
+                st.stop()
+            
+            # Composition input with auto-balancing
+            st.markdown("**Composition Input:**")
+            st.caption(f"For {len(selected_elements)} components, specify {len(selected_elements)-1} values")
+            
+            composition = {}
+            total_so_far = 0.0
+            
+            for i, element in enumerate(selected_elements):
+                if i < len(selected_elements) - 1:
+                    max_val = 1.0 - total_so_far
+                    fraction = st.number_input(
+                        f"X({element})",
+                        min_value=0.0,
+                        max_value=float(max_val),
+                        value=float(1.0/len(selected_elements)),
+                        step=0.01,
+                        key=f"comp_{element}"
+                    )
+                    composition[element] = fraction
+                    total_so_far += fraction
+                else:
+                    # Last element
+                    remaining = 1.0 - total_so_far
+                    composition[element] = remaining
+                    st.info(f"X({element}) = {remaining:.3f} (auto-calculated)")
+            
+            # Display composition summary
+            st.markdown("**Composition Summary:**")
+            comp_text = ""
+            for elem, frac in composition.items():
+                comp_text += f'<span class="component-badge">{elem}: {frac:.3f}</span> '
+            st.markdown(comp_text, unsafe_allow_html=True)
+            
+            # Validate composition
+            comp_sum = sum(composition.values())
+            if abs(comp_sum - 1.0) > 0.001:
+                st.error(f"❌ Composition sum = {comp_sum:.4f} (must be 1.0)")
+                st.stop()
+        
+        with col_conf2:
+            # Temperature settings
+            st.markdown("**Temperature Range:**")
+            temp_mode = st.radio("Mode:", ["Single", "Range"], horizontal=True)
+            
+            if temp_mode == "Single":
+                T_value = st.number_input("Temperature (K)", 100, 5000, 1000)
+                T_condition = T_value
+                T_display = f"{T_value} K"
+            else:
+                col_t1, col_t2, col_t3 = st.columns(3)
+                with col_t1:
+                    T_start = st.number_input("Start (K)", 100, 5000, 300)
+                with col_t2:
+                    T_end = st.number_input("End (K)", T_start, 6000, 1500)
+                with col_t3:
+                    T_step = st.number_input("Step (K)", 1, 200, 10)
+                T_condition = (T_start, T_end, T_step)
+                T_display = f"{T_start}-{T_end} K, step={T_step}"
+            
+            # Pressure
+            P_value = st.number_input("Pressure (Pa)", 1000, 10000000, 101325)
+            
+            # Phase selection
+            st.markdown("**Phase Selection:**")
+            selected_phases = st.multiselect(
+                "Select phases for equilibrium:",
+                phases,
+                default=phases[:min(2, len(phases))]
+            )
+            
+            if not selected_phases:
+                st.warning("Please select at least one phase")
+                st.stop()
+            
+            # Advanced options
+            with st.expander("⚙️ Advanced Options", expanded=False):
+                calc_mode = st.selectbox(
+                    "Calculation mode",
+                    ["Fast", "Accurate", "Very Accurate"],
+                    index=1
+                )
+                
+                output_variable = st.selectbox(
+                    "Output variable",
+                    ["HM", "GM", "SM", "CPM"],
+                    index=0,
+                    help="HM: Enthalpy, GM: Gibbs energy, SM: Entropy, CPM: Heat capacity"
+                )
+        
+        # DOF Analysis and Validation
+        st.markdown("---")
+        st.subheader("⚖️ DOF Validation Before Calculation")
+        
+        # Build conditions
+        conditions = {
+            v.T: T_condition,
+            v.P: P_value
+        }
+        
+        # Add composition conditions (n-1)
+        for i, (element, fraction) in enumerate(composition.items()):
+            if i < len(selected_elements) - 1:  # Only first n-1
+                conditions[v.X(element)] = fraction
+        
+        components_with_va = selected_elements + ['VA']
+        
+        # Perform DOF analysis
+        dof_analysis = analyzer.analyze_degrees_of_freedom(
+            components_with_va, selected_phases, conditions
+        )
+        
+        validation = analyzer.validate_equilibrium_conditions(
+            components_with_va, selected_phases, conditions
+        )
+        
+        # Display analysis
+        col_val1, col_val2 = st.columns([2, 1])
+        
+        with col_val1:
+            if dof_analysis['is_valid'] and validation['is_valid']:
+                st.markdown('<div class="dof-indicator dof-correct">✅ SYSTEM VALID - Ready for calculation!</div>', 
+                          unsafe_allow_html=True)
+            elif dof_analysis['is_under_specified']:
+                st.markdown('<div class="dof-indicator dof-warning">⚠️ UNDER-CONSTRAINED - Fix before calculation</div>', 
+                          unsafe_allow_html=True)
+            else:
+                st.markdown('<div class="dof-indicator dof-error">❌ OVER-CONSTRAINED - Fix before calculation</div>', 
+                          unsafe_allow_html=True)
+        
+        with col_val2:
+            st.metric("Degrees of Freedom", dof_analysis['actual_F'], 
+                     delta="Target: 0", delta_color="normal" if dof_analysis['actual_F'] == 0 else "off")
+        
+        # Show validation details
+        if validation['errors']:
+            st.error("**Validation Errors:**")
+            for error in validation['errors']:
+                st.error(error)
+        
+        if validation['warnings']:
+            st.warning("**Validation Warnings:**")
+            for warning in validation['warnings']:
+                st.warning(warning)
+        
+        # Show what will be passed to equilibrium
+        with st.expander("📋 View Conditions for equilibrium()", expanded=False):
+            st.markdown("**Components:**")
+            st.markdown(f"`{components_with_va}`")
+            
+            st.markdown("**Phases:**")
+            st.markdown(f"`{selected_phases}`")
+            
+            st.markdown("**Conditions:**")
+            for key, value in conditions.items():
+                if key == v.T:
+                    if isinstance(value, tuple):
+                        st.code(f"v.T: ({value[0]}, {value[1]}, {value[2]})")
+                    else:
+                        st.code(f"v.T: {value}")
+                elif key == v.P:
+                    st.code(f"v.P: {value}")
+                elif 'X(' in str(key):
+                    element = str(key).split('(')[1].split(')')[0]
+                    st.code(f"v.X('{element}'): {value}")
+        
+        # Calculate button (only enabled if valid)
+        st.markdown("---")
+        calculate_enabled = dof_analysis['is_valid'] and validation['is_valid']
+        
+        if calculate_enabled:
+            if st.button("🚀 Calculate Enthalpy", type="primary", use_container_width=True):
+                with st.spinner("Performing equilibrium calculation..."):
+                    try:
+                        # Perform equilibrium calculation
+                        eq_result = equilibrium(
+                            dbf,
+                            components_with_va,
+                            selected_phases,
+                            conditions,
+                            output=output_variable,
+                            verbose=False
+                        )
+                        
+                        # Extract results
+                        T_values = eq_result.T.values.flatten()
+                        result_values = eq_result[output_variable].values.flatten()
+                        
+                        # Create DataFrame
+                        result_df = pd.DataFrame({
+                            'Temperature_K': T_values,
+                            f'{output_variable}_J_mol': result_values
+                        })
+                        
+                        result_df = result_df.dropna().sort_values('Temperature_K')
+                        
+                        if len(result_df) == 0:
+                            st.error("❌ Calculation returned no valid results")
+                            st.stop()
+                        
+                        # Rename enthalpy column for consistency
+                        if output_variable == 'HM':
+                            result_df = result_df.rename(columns={'HM_J_mol': 'Enthalpy_J_mol'})
+                        
+                            # Add specific enthalpy
+                            result_df = analyzer.convert_to_specific_enthalpy(result_df, composition)
+                        
+                        # Store results
+                        material_name = f"{'-'.join([e for e in selected_elements[:3]])}"
+                        if len(selected_elements) > 3:
+                            material_name += f"-{len(selected_elements)-3}more"
+                        
+                        result_info = {
+                            'name': material_name,
+                            'composition': composition,
+                            'data': result_df,
+                            'phases': selected_phases,
+                            'tdb_file': os.path.basename(tdb_path),
+                            'temperature_range': (T_condition if isinstance(T_condition, tuple) else (T_condition, T_condition, 1)),
+                            'output_variable': output_variable,
+                            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        }
+                        analyzer.results_history.append(result_info)
+                        
+                        st.success(f"✅ Calculation successful! Generated {len(result_df)} data points")
+                        
+                        # Visualization
+                        fig, ax = plt.subplots(figsize=(12, 8), dpi=150)
+                        
+                        if output_variable == 'HM':
+                            ax.plot(result_df['Temperature_K'], result_df['Enthalpy_J_mol'], 
+                                   'b-', linewidth=2.5, marker='o', markersize=4, 
+                                   markevery=max(1, len(result_df)//20))
+                            ax.set_ylabel('Enthalpy (J/mol)', fontweight='bold')
+                            ax.set_title(f'Enthalpy vs Temperature - {material_name}', fontweight='bold')
+                            
+                            # Add specific enthalpy on secondary axis
+                            ax2 = ax.twinx()
+                            ax2.plot(result_df['Temperature_K'], result_df['Enthalpy_J_kg'], 
+                                    'r-', linewidth=2, alpha=0.7, linestyle='--')
+                            ax2.set_ylabel('Specific Enthalpy (J/kg)', fontweight='bold', color='r')
+                            ax2.tick_params(axis='y', labelcolor='r')
+                        else:
+                            ax.plot(result_df['Temperature_K'], result_df[f'{output_variable}_J_mol'], 
+                                   'g-', linewidth=2.5)
+                            ax.set_ylabel(f'{output_variable} (J/mol)', fontweight='bold')
+                            ax.set_title(f'{output_variable} vs Temperature - {material_name}', fontweight='bold')
+                        
+                        ax.set_xlabel('Temperature (K)', fontweight='bold')
+                        ax.grid(True, alpha=0.3)
+                        
+                        plt.tight_layout()
+                        st.pyplot(fig)
+                        
+                        # Key metrics
+                        col_m1, col_m2, col_m3 = st.columns(3)
+                        
+                        with col_m1:
+                            if output_variable == 'HM':
+                                min_val = result_df['Enthalpy_J_mol'].min()
+                                max_val = result_df['Enthalpy_J_mol'].max()
+                                st.metric("Min Enthalpy", f"{min_val:,.0f} J/mol")
+                        
+                        with col_m2:
+                            if output_variable == 'HM':
+                                st.metric("Max Enthalpy", f"{max_val:,.0f} J/mol")
+                        
+                        with col_m3:
+                            if output_variable == 'HM':
+                                delta = max_val - min_val
+                                st.metric("ΔH", f"{delta:,.0f} J/mol")
+                        
+                        # Download options
+                        st.markdown("---")
+                        st.subheader("📥 Download Results")
+                        
+                        col_dl1, col_dl2 = st.columns(2)
+                        
+                        with col_dl1:
+                            csv_data = result_df.to_csv(index=False)
+                            st.download_button(
+                                "📄 Download CSV",
+                                data=csv_data,
+                                file_name=f"results_{material_name}.csv",
+                                mime="text/csv",
+                                use_container_width=True
+                            )
+                        
+                        with col_dl2:
+                            # Create comprehensive report
+                            report = {
+                                'material': material_name,
+                                'composition': composition,
+                                'conditions': {
+                                    'temperature': T_display,
+                                    'pressure': f"{P_value} Pa",
+                                    'phases': selected_phases
+                                },
+                                'data': result_df.to_dict('records')
+                            }
+                            
+                            json_data = json.dumps(report, indent=4)
+                            st.download_button(
+                                "📁 Download JSON Report",
+                                data=json_data,
+                                file_name=f"report_{material_name}.json",
+                                mime="application/json",
+                                use_container_width=True
+                            )
+                    
+                    except Exception as e:
+                        st.error(f"❌ Calculation error: {str(e)}")
+                        st.code(traceback.format_exc(), language='python')
+                        
+                        # Provide specific help for DOF errors
+                        if "degrees of freedom is not zero" in str(e):
+                            st.markdown("### 🆘 DOF Error Detected!")
+                            st.markdown("""
+                            Even though our analysis showed F=0, pycalphad still encountered a DOF error.
+                            This can happen because:
+                            
+                            1. **Phase stability issues**: Selected phases might not be stable at given conditions
+                            2. **Database limitations**: Some phases might not be defined for all compositions
+                            3. **Numerical issues** in the starting point calculation
+                            
+                            **Try:**
+                            1. Use different phases
+                            2. Adjust temperature range
+                            3. Try different composition
+                            4. Check the DOF Analyzer tab for detailed diagnosis
+                            """)
+        else:
+            st.button("🚀 Calculate Enthalpy", 
+                     use_container_width=True, 
+                     disabled=True,
+                     help="Fix DOF issues before calculation")
+            
+            # Show what needs to be fixed
+            st.markdown("### 🔧 Fix Required Before Calculation")
+            
+            if dof_analysis['is_under_specified']:
+                st.error(f"**Under-constrained:** Need {dof_analysis['theoretical_F'] - dof_analysis['specified_vars']['independent_intensive']} more intensive variable(s)")
+            
+            if dof_analysis['is_over_specified']:
+                st.error(f"**Over-constrained:** Remove {dof_analysis['specified_vars']['independent_intensive'] - dof_analysis['theoretical_F']} constraint(s)")
+            
+            # Provide specific suggestions
+            suggestions = analyzer._generate_fix_suggestions(
+                selected_elements, selected_phases, conditions, 
+                dof_analysis['specified_vars']['compositions']
+            )
+            
+            if suggestions:
+                st.markdown("**Suggestions:**")
+                for suggestion in suggestions:
+                    st.markdown(suggestion)
     
     # ==================== TAB 4: Curve Fitting ====================
     with tab4:
-        tab4_content = Tab4Content(analyzer)
-        tab4_content.render()
+        st.header("📊 Curve Fitting & Analysis")
+        
+        if not analyzer.results_history:
+            st.info("💡 No computed data available. Please perform calculations in the 'Enthalpy Computation' tab first.")
+            st.stop()
+        
+        # Data selection
+        st.subheader("📈 Select Data for Fitting")
+        
+        result_options = [
+            f"{i+1}. {res['name']} | {res['tdb_file']} | {len(res['data'])} pts"
+            for i, res in enumerate(analyzer.results_history)
+        ]
+        
+        selected_idx = st.selectbox(
+            "Select computed result:",
+            range(len(result_options)),
+            format_func=lambda x: result_options[x],
+            index=len(result_options)-1
+        )
+        
+        result = analyzer.results_history[selected_idx]
+        data = result['data']
+        
+        # Check if we have enthalpy data
+        if 'Enthalpy_J_mol' not in data.columns:
+            st.error("Selected data doesn't contain enthalpy. Please use 'HM' output in calculations.")
+            st.stop()
+        
+        T_data = data['Temperature_K'].values
+        H_data = data['Enthalpy_J_mol'].values
+        
+        # Display data info
+        col_info1, col_info2, col_info3 = st.columns(3)
+        
+        with col_info1:
+            st.metric("Data Points", len(T_data))
+        
+        with col_info2:
+            st.metric("Temperature Range", f"{T_data.min():.0f}-{T_data.max():.0f} K")
+        
+        with col_info3:
+            delta_H = H_data.max() - H_data.min()
+            st.metric("ΔH Range", f"{delta_H:,.0f} J/mol")
+        
+        # Fitting parameters
+        st.markdown("---")
+        st.subheader("⚙️ Fitting Parameters")
+        
+        # Smart initial guesses
+        T_range = T_data.max() - T_data.min()
+        H_range = H_data.max() - H_data.min()
+        H_slope = H_range / T_range if T_range > 0 else 1.0
+        T_mid = (T_data.max() + T_data.min()) / 2
+        
+        col_fit1, col_fit2 = st.columns(2)
+        
+        with col_fit1:
+            A1_guess = st.number_input(
+                "A₁ initial (J/mol·K)", 
+                -200.0, 200.0, 
+                float(max(5.0, min(50.0, H_slope * 0.5))), 
+                0.1
+            )
+            A2_guess = st.number_input(
+                "A₂ initial (J/mol·K)", 
+                -200.0, 200.0, 
+                float(max(1.0, min(30.0, H_slope * 0.2))), 
+                0.1
+            )
+            Tm_guess = st.number_input(
+                "Tₘ initial (K)", 
+                float(T_data.min()), float(T_data.max()), 
+                float(T_mid), 
+                1.0
+            )
+        
+        with col_fit2:
+            DeltaHf_guess = st.number_input(
+                "ΔHf initial (J/mol)", 
+                -100000.0, 100000.0, 
+                float(max(5000.0, min(50000.0, H_range * 0.3))), 
+                100.0
+            )
+            k_guess = st.number_input(
+                "k initial (1/K)", 
+                0.0001, 1.0, 
+                0.01, 
+                0.001
+            )
+            H298_guess = st.number_input(
+                "H₂₉₈ initial (J/mol)", 
+                -100000.0, 100000.0, 
+                float(H_data.min() * 0.9), 
+                100.0
+            )
+        
+        # Fit button
+        if st.button("🎯 Perform Curve Fit", type="primary", use_container_width=True):
+            with st.spinner("Fitting curve to data..."):
+                try:
+                    initial_guess = [A1_guess, A2_guess, Tm_guess, DeltaHf_guess, k_guess, H298_guess]
+                    
+                    # Bounds
+                    lower_bounds = [-500, -500, T_data.min() * 0.8, 0, 1e-6, -1e6]
+                    upper_bounds = [500, 500, T_data.max() * 1.2, 1e6, 1.0, 1e6]
+                    
+                    fit_params, pcov = curve_fit(
+                        analyzer.enthalpy_equation,
+                        T_data,
+                        H_data,
+                        p0=initial_guess,
+                        bounds=(lower_bounds, upper_bounds),
+                        maxfev=10000
+                    )
+                    
+                    A1_fit, A2_fit, Tm_fit, DeltaHf_fit, k_fit, H298_fit = fit_params
+                    
+                    # Generate fitted curve
+                    T_fit = np.linspace(T_data.min(), T_data.max(), 1000)
+                    H_fit = analyzer.enthalpy_equation(T_fit, *fit_params)
+                    
+                    # Calculate statistics
+                    H_pred = analyzer.enthalpy_equation(T_data, *fit_params)
+                    residuals = H_data - H_pred
+                    ss_res = np.sum(residuals**2)
+                    ss_tot = np.sum((H_data - np.mean(H_data))**2)
+                    r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
+                    rmse = np.sqrt(np.mean(residuals**2))
+                    
+                    # Store results
+                    fit_result = {
+                        'material_name': result['name'],
+                        'coefficients': {
+                            'A1': A1_fit,
+                            'A2': A2_fit,
+                            'Tm': Tm_fit,
+                            'DeltaHf': DeltaHf_fit,
+                            'k': k_fit,
+                            'H298': H298_fit
+                        },
+                        'statistics': {
+                            'r_squared': r_squared,
+                            'rmse': rmse,
+                            'data_points': len(T_data)
+                        },
+                        'composition': result['composition'],
+                        'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    }
+                    analyzer.fitting_results.append(fit_result)
+                    
+                    st.success(f"✅ Fitting completed! R² = {r_squared:.6f}, RMSE = {rmse:.2f} J/mol")
+                    
+                    # Visualization
+                    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), dpi=150)
+                    
+                    # Main fit
+                    ax1.scatter(T_data, H_data, alpha=0.6, label='Data', 
+                               color='blue', s=40)
+                    ax1.plot(T_fit, H_fit, 'r-', linewidth=2.5, label='Fit')
+                    ax1.set_xlabel('Temperature (K)', fontweight='bold')
+                    ax1.set_ylabel('Enthalpy (J/mol)', fontweight='bold')
+                    ax1.set_title(f'Enthalpy-Temperature Fit - {result["name"]}', 
+                                 fontweight='bold')
+                    ax1.legend()
+                    ax1.grid(True, alpha=0.3)
+                    
+                    # Residuals
+                    ax2.scatter(T_data, residuals, alpha=0.6, color='green', s=30)
+                    ax2.axhline(y=0, color='r', linestyle='--', alpha=0.7)
+                    ax2.set_xlabel('Temperature (K)', fontweight='bold')
+                    ax2.set_ylabel('Residuals (J/mol)', fontweight='bold')
+                    ax2.set_title('Residuals', fontweight='bold')
+                    ax2.grid(True, alpha=0.3)
+                    
+                    plt.tight_layout()
+                    st.pyplot(fig)
+                    
+                    # Display equation
+                    st.markdown("### 🧮 Fitted Equation")
+                    st.latex(rf"""
+                    H(T) = {A1_fit:.3f} \cdot T + {A2_fit:.3f} \cdot \max(T - {Tm_fit:.1f}, 0) + 
+                    {DeltaHf_fit:,.0f} \cdot \frac{{1}}{{1 + e^{{-{k_fit:.5f}(T - {Tm_fit:.1f})}}}} + {H298_fit:,.0f}
+                    """)
+                
+                except Exception as e:
+                    st.error(f"❌ Fitting error: {str(e)}")
     
     # ==================== TAB 5: Settings & Help ====================
     with tab5:
-        tab5_content = Tab5Content(analyzer)
-        tab5_content.render()
+        st.header("⚙️ Settings & Comprehensive Help")
+        
+        col_set1, col_set2 = st.columns([1, 1])
+        
+        with col_set1:
+            st.subheader("📖 Complete DOF Error Guide")
+            
+            with st.expander("❓ What is 'Number of degrees of freedom is not zero'?", expanded=True):
+                st.markdown("""
+                **This is a thermodynamic consistency error from pycalphad's `equilibrium()` function.**
+                
+                It means: **Your system is not fully determined for equilibrium calculation.**
+                
+                ### 🔬 Thermodynamic Meaning:
+                
+                From the **Gibbs Phase Rule**:
+                ```
+                F = C - P + 2
+                ```
+                
+                - **F** = Degrees of Freedom (must be 0 for equilibrium)
+                - **C** = Number of Components (real elements, excluding VA)
+                - **P** = Number of Phases
+                - **2** = Temperature + Pressure (always count as 2 intensive variables)
+                
+                **For `equilibrium()` to work:**
+                ```
+                F = 0  ← You must have exactly 0 degrees of freedom!
+                ```
+                
+                Which means you must specify:
+                ```
+                Number of specified intensive variables = C - P + 2
+                ```
+                """)
+            
+            with st.expander("🎯 Exactly What to Specify", expanded=False):
+                st.markdown("""
+                ### For N-component system:
+                
+                **ALWAYS specify:**
+                1. **Temperature (T)** - in Kelvin
+                2. **Pressure (P)** - in Pascals
+                
+                **For composition (CRITICAL PART):**
+                - **Specify exactly N-1 mole fractions**
+                - **DO NOT specify all N compositions**
+                - **DO NOT let compositions sum to > 1.0**
+                
+                ### Examples:
+                
+                **Binary (2 components):**
+                ```python
+                # CORRECT - Specify 1 composition
+                conditions = {
+                    v.T: 1000,
+                    v.P: 101325,
+                    v.X('AL'): 0.7  # CU is implicit: 1 - 0.7 = 0.3
+                }
+                ```
+                
+                **Ternary (3 components):**
+                ```python
+                # CORRECT - Specify 2 compositions
+                conditions = {
+                    v.T: 1000,
+                    v.P: 101325,
+                    v.X('AL'): 0.6,
+                    v.X('CU'): 0.2  # NI is implicit: 1 - 0.6 - 0.2 = 0.2
+                }
+                ```
+                
+                **Unary (1 component):**
+                ```python
+                # CORRECT - No composition needed
+                conditions = {
+                    v.T: 1000,
+                    v.P: 101325
+                }
+                ```
+                """)
+            
+            with st.expander("🚫 Common Mistakes & Fixes", expanded=False):
+                st.markdown("""
+                ### ❌ MISTAKE 1: Missing T or P
+                ```python
+                # WRONG - No temperature!
+                conditions = {
+                    v.P: 101325,
+                    v.X('AL'): 0.7
+                }
+                ```
+                **FIX:** Always include both `v.T` and `v.P`
+                
+                ### ❌ MISTAKE 2: Specifying all compositions
+                ```python
+                # WRONG - Specifying all 3 for ternary
+                conditions = {
+                    v.T: 1000,
+                    v.P: 101325,
+                    v.X('AL'): 0.6,
+                    v.X('CU'): 0.2,
+                    v.X('NI'): 0.2  # REDUNDANT! Sums to 1.0
+                }
+                ```
+                **FIX:** Specify only N-1 compositions
+                
+                ### ❌ MISTAKE 3: Using v.N unnecessarily
+                ```python
+                # WRONG - v.N is not needed
+                conditions = {
+                    v.T: 1000,
+                    v.P: 101325,
+                    v.X('AL'): 0.7,
+                    v.N: 1  # pycalphad assumes N=1 by default
+                }
+                ```
+                **FIX:** Remove `v.N` unless you specifically need to vary total moles
+                
+                ### ❌ MISTAKE 4: Composition sum > 1.0
+                ```python
+                # WRONG - Sum > 1.0
+                conditions = {
+                    v.T: 1000,
+                    v.P: 101325,
+                    v.X('AL'): 0.8,
+                    v.X('CU'): 0.3  # Sum = 1.1 > 1.0!
+                }
+                ```
+                **FIX:** Ensure sum of specified compositions ≤ 1.0
+                """)
+            
+            with st.expander("🔧 Debugging Steps", expanded=False):
+                st.markdown("""
+                ### Step-by-Step Debugging:
+                
+                1. **Count your components (C)**
+                   ```python
+                   real_components = [c for c in components if c != 'VA']
+                   C = len(real_components)
+                   ```
+                
+                2. **Count your phases (P)**
+                   ```python
+                   P = len(phases)
+                   ```
+                
+                3. **Calculate required variables**
+                   ```python
+                   required_vars = C - P + 2
+                   ```
+                
+                4. **Count what you're specifying**
+                   - +1 for `v.T`
+                   - +1 for `v.P`  
+                   - +1 for each independent `v.X(element)`
+                
+                5. **Check:**
+                   ```
+                   If specified = required: ✅ Good to go!
+                   If specified < required: ❌ Under-constrained
+                   If specified > required: ❌ Over-constrained
+                   ```
+                
+                6. **Print your conditions:**
+                   ```python
+                   print("Conditions:")
+                   for k, v in conditions.items():
+                       print(f"  {k}: {v}")
+                   ```
+                """)
+        
+        with col_set2:
+            st.subheader("⚙️ Application Management")
+            
+            # Database management
+            st.markdown("#### 📁 Database Management")
+            
+            tdb_files = analyzer.get_available_tdb_files()
+            if tdb_files:
+                st.write(f"**Found {len(tdb_files)} TDB files:**")
+                
+                for tdb in tdb_files:
+                    col_t1, col_t2 = st.columns([3, 1])
+                    with col_t1:
+                        st.caption(f"`{tdb}`")
+                    with col_t2:
+                        if st.button("🗑️", key=f"del_{tdb}", help="Delete"):
+                            try:
+                                (analyzer.database_dir / tdb).unlink()
+                                st.success(f"Deleted {tdb}")
+                                st.rerun()
+                            except:
+                                st.error("Error deleting")
+            else:
+                st.info("No TDB files in database directory")
+            
+            # TDB upload
+            st.markdown("#### 📤 Upload TDB Files")
+            uploaded = st.file_uploader("Upload TDB", type=["tdb", "TDB"], key="upload_settings")
+            if uploaded:
+                analyzer.save_uploaded_tdb(uploaded)
+                st.rerun()
+            
+            # Session management
+            st.markdown("#### 🗑️ Session Management")
+            
+            col_sess1, col_sess2 = st.columns(2)
+            with col_sess1:
+                if st.button("Clear All Data", use_container_width=True, type="secondary"):
+                    analyzer.results_history = []
+                    analyzer.fitting_results = []
+                    st.success("Data cleared!")
+                    st.rerun()
+            
+            with col_sess2:
+                if st.button("Reset Application", use_container_width=True, type="secondary"):
+                    for key in list(st.session_state.keys()):
+                        del st.session_state[key]
+                    st.success("Application reset!")
+                    st.rerun()
+            
+            # About section
+            st.markdown("---")
+            st.subheader("ℹ️ About")
+            
+            st.markdown("""
+            **Thermodynamic Enthalpy Analyzer Pro v3.0**
+            
+            *With Intelligent DOF Error Prevention*
+            
+            **Key Features:**
+            - 🛡️ **DOF Error Prevention**: Gibbs Phase Rule validation
+            - 🔬 **Smart Composition Handling**: Auto-balancing for n-component systems
+            - 📊 **Comprehensive Analysis**: Phase diagrams, curve fitting, comparison
+            - 🎯 **Minimal Working Examples**: Auto-generated code for quick fixes
+            
+            **Technical Stack:**
+            - **CALPHAD Engine**: pycalphad
+            - **Numerical Methods**: scipy, numpy
+            - **Visualization**: matplotlib
+            - **Interface**: Streamlit
+            
+            **License**: MIT
+            **Version**: 3.0.0
+            """)
     
     # Footer
     st.markdown("---")
@@ -2728,10 +2357,7 @@ conditions = {
         st.caption(f"🔥 Thermodynamic Enthalpy Analyzer Pro | DOF-Protected Edition | {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
     with footer_col2:
-        analyzer.key_manager.set_section_context("FOOTER")
-        if st.button("🔄 Refresh", 
-                    type="secondary",
-                    key=analyzer.key_manager.generate_key("button", "refresh")):
+        if st.button("🔄 Refresh", type="secondary"):
             st.rerun()
 
 if __name__ == "__main__":
