@@ -24,6 +24,12 @@ matplotlib.use('Agg')  # Use non-interactive backend
 
 warnings.filterwarnings('ignore')
 
+# Initialize session state for caching
+if 'simulation_cache' not in st.session_state:
+    st.session_state.simulation_cache = {}
+if 'widget_state' not in st.session_state:
+    st.session_state.widget_state = {}
+
 # Page configuration with enhanced settings
 st.set_page_config(
     page_title="🔥 Thermodynamic Enthalpy Analyzer Pro",
@@ -244,7 +250,6 @@ st.markdown("""
 
 # COMPREHENSIVE PERIODIC TABLE DATA (118 elements with complete information)
 PERIODIC_TABLE = {
-    # Element: [Symbol, Name, AtomicNumber, MolarWeight(g/mol), Density(g/cm³), MeltingPoint(K), BoilingPoint(K), Group, Period, Block]
     'H': ['H', 'Hydrogen', 1, 1.008, 0.0000899, 14.01, 20.28, 1, 1, 's'],
     'HE': ['He', 'Helium', 2, 4.0026, 0.0001785, 0.95, 4.22, 18, 1, 's'],
     'LI': ['Li', 'Lithium', 3, 6.94, 0.534, 453.65, 1603, 1, 2, 's'],
@@ -553,18 +558,13 @@ class EnthalpyAnalyzer:
     def create_thumbnail(self, fig, size=(300, 200)):
         """Create thumbnail image from matplotlib figure"""
         try:
-            # Create a new figure with proper dimensions
             thumb_fig = plt.figure(figsize=(size[0]/100, size[1]/100), dpi=100)
-            
-            # Copy axes from original figure
             for ax in fig.axes:
                 new_ax = thumb_fig.add_subplot(111)
-                # Copy basic properties
                 new_ax.set_xlabel(ax.get_xlabel(), fontsize=8)
                 new_ax.set_ylabel(ax.get_ylabel(), fontsize=8)
                 new_ax.set_title(ax.get_title(), fontsize=10)
                 
-                # Copy lines
                 for line in ax.lines:
                     xdata = line.get_xdata()
                     ydata = line.get_ydata()
@@ -575,7 +575,6 @@ class EnthalpyAnalyzer:
                                           marker=line.get_marker(),
                                           markersize=line.get_markersize()/2)
                 
-                # Copy scatter points
                 for collection in ax.collections:
                     offsets = collection.get_offsets()
                     if len(offsets) > 0:
@@ -586,7 +585,7 @@ class EnthalpyAnalyzer:
                 
                 new_ax.grid(True, alpha=0.3)
                 new_ax.tick_params(labelsize=6)
-                break  # Just take first axis for thumbnail
+                break
             
             thumb_fig.tight_layout(pad=0.5)
             buf = BytesIO()
@@ -614,7 +613,6 @@ class EnthalpyAnalyzer:
         
         dat_lines.append("#" + "-"*80)
         
-        # Dynamic header based on columns present
         if columns is None:
             columns = ['Temperature_K', 'Enthalpy_J_mol', 'Enthalpy_J_kg']
         
@@ -630,7 +628,6 @@ class EnthalpyAnalyzer:
         dat_lines.append("# " + "  ".join([f"{h:<20}" for h in header_parts]))
         dat_lines.append("#" + "-"*80)
         
-        # Dynamic formatting based on columns
         for _, row in df.iterrows():
             line_parts = []
             for col in columns:
@@ -1084,7 +1081,7 @@ def create_comparison_visualization(analyzer, selected_indices, customizations=N
     fig.text(0.02, 0.02, f"Generated: {timestamp}", fontsize=8, alpha=0.6)
     
     return fig
-#
+
 def create_interactive_plotly_visualization(df, composition, material_name, fitted_params=None):
     """Create interactive Plotly visualization with enhanced features"""
     # Create subplots with different layout
@@ -1266,7 +1263,6 @@ def create_interactive_plotly_visualization(df, composition, material_name, fitt
     fig.update_yaxes(title_text='Phase Fraction', row=3, col=1)
     
     return fig
-
 
 def create_curve_fitting_visualization(T_data, H_data, T_fit, H_fit, fit_params, residuals, 
                                       r_squared, rmse, material_name, composition, 
@@ -1595,7 +1591,7 @@ def main():
                     "Source:",
                     ["Select from database directory", "Upload new TDB file"],
                     horizontal=True,
-                    key="tdb_source_tab1"
+                    key="tab1_tdb_source"
                 )
             else:
                 st.info(f"No TDB files found in '{analyzer.database_dir}'. Please upload a file.")
@@ -1608,7 +1604,7 @@ def main():
                     f"Available TDB files in '{analyzer.database_dir}' directory:",
                     available_tdb_files,
                     help="Select a thermodynamic database file",
-                    key="tdb_select_tab1"
+                    key="tab1_tdb_select"
                 )
                 tdb_path = str(analyzer.database_dir / selected_file)
                 st.success(f"✓ Selected: **{selected_file}**")
@@ -1622,7 +1618,7 @@ def main():
                     "Upload TDB file",
                     type=["tdb", "TDB"],
                     help="Upload a thermodynamic database file (.tdb)",
-                    key="uploader_tab1"
+                    key="tab1_uploader"
                 )
                 
                 if uploaded_file is not None:
@@ -1632,7 +1628,7 @@ def main():
                     
                     st.success(f"✓ Uploaded: **{uploaded_file.name}**")
                     
-                    if st.checkbox("💾 Save to 'databases' directory for future use", value=True, key="save_tdb_tab1"):
+                    if st.checkbox("💾 Save to 'databases' directory for future use", value=True, key="tab1_save_tdb"):
                         saved_path = analyzer.save_uploaded_tdb(uploaded_file)
                         if saved_path:
                             st.info(f"Saved to: `{saved_path}`")
@@ -1680,7 +1676,7 @@ def main():
                 available_elements,
                 default=available_elements[:min(3, len(available_elements))],
                 help="Select elements to include in your alloy composition",
-                key="elements_tab1"
+                key="tab1_elements"
             )
             
             if not selected_elements:
@@ -1693,13 +1689,12 @@ def main():
                 "Fraction type:",
                 ["Mole Fraction", "Weight Fraction"],
                 horizontal=True,
-                key="comp_type_tab1"
+                key="tab1_comp_type"
             )
             
             # Initialize session state for composition
-            composition_key = f"composition_{'_'.join(sorted(selected_elements))}"
+            composition_key = f"tab1_composition_{'_'.join(sorted(selected_elements))}"
             if composition_key not in st.session_state:
-                # Initialize with equal distribution
                 n_elements = len(selected_elements)
                 initial_values = {element: 1.0/n_elements for element in selected_elements}
                 st.session_state[composition_key] = initial_values
@@ -1712,39 +1707,53 @@ def main():
                 col_slider, col_number = st.columns([3, 1])
                 
                 with col_slider:
-                    # Get current value from session state
                     current_value = st.session_state[composition_key].get(element, 1.0/len(selected_elements))
+                    
+                    # Use widget state management
+                    widget_key_slider = f"tab1_slider_{element}"
+                    widget_key_number = f"tab1_num_{element}"
+                    
+                    # Initialize widget state if not exists
+                    if widget_key_slider not in st.session_state.widget_state:
+                        st.session_state.widget_state[widget_key_slider] = current_value
+                    if widget_key_number not in st.session_state.widget_state:
+                        st.session_state.widget_state[widget_key_number] = current_value
                     
                     # Create slider
                     slider_value = st.slider(
                         f"{element} {fraction_type}",
                         0.0, 1.0,
-                        float(current_value),
+                        float(st.session_state.widget_state[widget_key_slider]),
                         0.001,
-                        key=f"slider_{element}_tab1",
-                        format="%.3f"
+                        key=widget_key_slider,
+                        format="%.3f",
+                        on_change=lambda el=element, key_s=widget_key_slider, key_n=widget_key_number: 
+                            st.session_state.widget_state.update({key_n: st.session_state[key_s]})
                     )
+                    
+                    # Update widget state
+                    st.session_state.widget_state[widget_key_slider] = slider_value
                 
                 with col_number:
                     # Create number input that syncs with slider
                     num_value = st.number_input(
                         "Value",
                         0.0, 1.0,
-                        slider_value,
+                        float(st.session_state.widget_state[widget_key_number]),
                         0.001,
-                        key=f"num_{element}_tab1",
+                        key=widget_key_number,
                         format="%.3f",
-                        label_visibility="collapsed"
+                        label_visibility="collapsed",
+                        on_change=lambda el=element, key_s=widget_key_slider, key_n=widget_key_number: 
+                            st.session_state.widget_state.update({key_s: st.session_state[key_n]})
                     )
+                    
+                    # Update widget state
+                    st.session_state.widget_state[widget_key_number] = num_value
                 
-                # Use the number input value if it was changed
-                if f"num_{element}_tab1" in st.session_state:
-                    value = st.session_state[f"num_{element}_tab1"]
-                else:
-                    value = slider_value
-                
-                composition[element] = value
-                total_entered += value
+                # Use the slider value (which is always in sync)
+                composition[element] = slider_value
+                total_entered += slider_value
             
             # Last element calculation
             last_element = selected_elements[-1]
@@ -1767,17 +1776,16 @@ def main():
             """, unsafe_allow_html=True)
             
             # Reset button
-            if st.button("🔄 Reset Composition", key="reset_comp_tab1"):
+            if st.button("🔄 Reset Composition", key="tab1_reset_comp"):
                 if composition_key in st.session_state:
                     del st.session_state[composition_key]
-                # Clear widget states
                 for element in selected_elements:
-                    slider_key = f"slider_{element}_tab1"
-                    num_key = f"num_{element}_tab1"
-                    if slider_key in st.session_state:
-                        del st.session_state[slider_key]
-                    if num_key in st.session_state:
-                        del st.session_state[num_key]
+                    widget_key_slider = f"tab1_slider_{element}"
+                    widget_key_number = f"tab1_num_{element}"
+                    if widget_key_slider in st.session_state.widget_state:
+                        del st.session_state.widget_state[widget_key_slider]
+                    if widget_key_number in st.session_state.widget_state:
+                        del st.session_state.widget_state[widget_key_number]
                 st.rerun()
             
             # Convert to mole fraction if needed for calculation
@@ -1791,11 +1799,11 @@ def main():
             st.markdown("**Temperature Range:**")
             col_temp1, col_temp2, col_temp3 = st.columns(3)
             with col_temp1:
-                T_start = st.number_input("Start (K)", 100, 5000, 300, 10, key="T_start_tab1")
+                T_start = st.number_input("Start (K)", 100, 5000, 300, 10, key="tab1_T_start")
             with col_temp2:
-                T_end = st.number_input("End (K)", T_start+10, 6000, 1500, 10, key="T_end_tab1")
+                T_end = st.number_input("End (K)", T_start+10, 6000, 1500, 10, key="tab1_T_end")
             with col_temp3:
-                T_step = st.number_input("Step (K)", 1, 200, 10, key="T_step_tab1")
+                T_step = st.number_input("Step (K)", 1, 200, 10, key="tab1_T_step")
             
             if T_end <= T_start:
                 st.error("❌ End temperature must be greater than start temperature")
@@ -1810,7 +1818,7 @@ def main():
                 available_phases,
                 default=default_phases,
                 help="Select phases to consider in equilibrium calculation",
-                key="phases_tab1"
+                key="tab1_phases"
             )
             
             if not selected_phases:
@@ -1818,65 +1826,86 @@ def main():
                 st.stop()
             
             # Pressure setting
-            P = st.number_input("Pressure (Pa)", 1000, 10000000, 101325, 1000, key="pressure_tab1")
+            P = st.number_input("Pressure (Pa)", 1000, 10000000, 101325, 1000, key="tab1_pressure")
             
             # Additional options
             st.markdown("**Additional Options:**")
-            show_heat_capacity = st.checkbox("Calculate heat capacity", value=True, key="heat_cap_tab1")
-            smooth_data = st.checkbox("Smooth enthalpy data", value=False, key="smooth_tab1")
+            show_heat_capacity = st.checkbox("Calculate heat capacity", value=True, key="tab1_heat_cap")
+            smooth_data = st.checkbox("Smooth enthalpy data", value=False, key="tab1_smooth")
         
         # Compute button with session state preservation
         st.markdown("---")
-        compute_key = f"compute_{hash(str(composition_mole))}_{T_start}_{T_end}_{T_step}"
         
-        if st.button("🚀 Compute Enthalpy", type="primary", use_container_width=True, key=compute_key):
+        # Create a unique cache key for this simulation
+        cache_key = f"simulation_{hash(str(composition_mole))}_{T_start}_{T_end}_{T_step}_{P}_{str(sorted(selected_phases))}"
+        
+        compute_button = st.button("🚀 Compute Enthalpy", type="primary", use_container_width=True, key="tab1_compute")
+        
+        if compute_button:
             with st.spinner("🔄 Performing equilibrium calculation... This may take a moment"):
                 try:
-                    conditions = {
-                        v.T: (T_start, T_end, T_step),
-                        v.P: P
-                    }
-                    
-                    # Add composition conditions
-                    elements_with_composition = list(composition_mole.keys())
-                    
-                    for i, element in enumerate(elements_with_composition[:-1]):
-                        if composition_mole[element] > 0:
-                            conditions[v.X(element)] = composition_mole[element]
-                    
-                    elements_with_va = selected_elements + ['VA']
-                    
-                    eq_result = equilibrium(
-                        dbf,
-                        elements_with_va,
-                        selected_phases,
-                        conditions,
-                        output='HM',  # Only enthalpy computation
-                        verbose=False,
-                        broadcast=False
-                    )
-                    
-                    # Extract results
-                    T_values = eq_result.T.values.flatten()
-                    result_values = eq_result['HM'].values.flatten()
-                    
-                    result_df = pd.DataFrame({
-                        'Temperature_K': T_values,
-                        'Enthalpy_J_mol': result_values
-                    })
-                    
-                    result_df = result_df.dropna().sort_values('Temperature_K').reset_index(drop=True)
-                    
-                    if len(result_df) == 0:
-                        st.error("❌ Calculation returned no valid results. Try adjusting parameters.")
-                        st.stop()
-                    
-                    # Smooth data if requested
-                    if smooth_data and len(result_df) > 10:
-                        window_size = min(5, len(result_df) // 10)
-                        result_df['Enthalpy_J_mol'] = result_df['Enthalpy_J_mol'].rolling(
-                            window=window_size, center=True, min_periods=1
-                        ).mean()
+                    # Check if result is already cached
+                    if cache_key in st.session_state.simulation_cache:
+                        st.info("📊 Using cached results from previous computation")
+                        result_df = st.session_state.simulation_cache[cache_key]['data']
+                        material_name = st.session_state.simulation_cache[cache_key]['name']
+                    else:
+                        conditions = {
+                            v.T: (T_start, T_end, T_step),
+                            v.P: P
+                        }
+                        
+                        elements_with_composition = list(composition_mole.keys())
+                        
+                        for i, element in enumerate(elements_with_composition[:-1]):
+                            if composition_mole[element] > 0:
+                                conditions[v.X(element)] = composition_mole[element]
+                        
+                        elements_with_va = selected_elements + ['VA']
+                        
+                        eq_result = equilibrium(
+                            dbf,
+                            elements_with_va,
+                            selected_phases,
+                            conditions,
+                            output='HM',
+                            verbose=False,
+                            broadcast=False
+                        )
+                        
+                        # Extract results
+                        T_values = eq_result.T.values.flatten()
+                        result_values = eq_result['HM'].values.flatten()
+                        
+                        result_df = pd.DataFrame({
+                            'Temperature_K': T_values,
+                            'Enthalpy_J_mol': result_values
+                        })
+                        
+                        result_df = result_df.dropna().sort_values('Temperature_K').reset_index(drop=True)
+                        
+                        if len(result_df) == 0:
+                            st.error("❌ Calculation returned no valid results. Try adjusting parameters.")
+                            st.stop()
+                        
+                        # Smooth data if requested
+                        if smooth_data and len(result_df) > 10:
+                            window_size = min(5, len(result_df) // 10)
+                            result_df['Enthalpy_J_mol'] = result_df['Enthalpy_J_mol'].rolling(
+                                window=window_size, center=True, min_periods=1
+                            ).mean()
+                        
+                        # Cache the result
+                        material_name = "-".join([f"{e}{composition_mole[e]:.2f}" for e in selected_elements[:3]])
+                        if len(selected_elements) > 3:
+                            material_name += f"-{len(selected_elements)-3}more"
+                        
+                        st.session_state.simulation_cache[cache_key] = {
+                            'data': result_df,
+                            'name': material_name,
+                            'composition': composition_mole,
+                            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        }
                     
                     # Add specific enthalpy
                     result_df = analyzer.convert_to_specific_enthalpy(result_df, composition_mole)
@@ -1888,10 +1917,6 @@ def main():
                         result_df['Heat_Capacity_J_per_mol_K'] = dH / dT
                     
                     # Store results in session state
-                    material_name = "-".join([f"{e}{composition_mole[e]:.2f}" for e in selected_elements[:3]])
-                    if len(selected_elements) > 3:
-                        material_name += f"-{len(selected_elements)-3}more"
-                    
                     result_info = {
                         'name': material_name,
                         'composition': composition_mole,
@@ -1916,11 +1941,9 @@ def main():
                             break
                     
                     if existing_idx >= 0:
-                        # Update existing result
                         analyzer.results_history[existing_idx] = result_info
                         st.info("↻ Updated existing calculation")
                     else:
-                        # Add new result
                         analyzer.results_history.append(result_info)
                     
                     # Create visualization
@@ -1929,14 +1952,13 @@ def main():
                         composition_mole, 
                         material_name,
                         analyzer.plot_customizations,
-                        None,  # Tm - not available from direct calculation
+                        None,
                         show_heat_capacity
                     )
                     
                     # Create thumbnail
                     thumbnail = analyzer.create_thumbnail(fig)
                     if thumbnail:
-                        # Update or add thumbnail
                         thumb_exists = False
                         for i, thumb in enumerate(analyzer.history_thumbnails):
                             if thumb['name'] == material_name:
@@ -1974,11 +1996,10 @@ def main():
                     with col_m4:
                         st.metric("Data Points", len(result_df))
                     
-                    # Enhanced download section with session state preservation
+                    # Enhanced download section
                     st.markdown('<div class="download-section">', unsafe_allow_html=True)
                     st.markdown("#### 📥 Download Results")
                     
-                    # Column selection for downloads
                     st.markdown('<div class="column-selector">', unsafe_allow_html=True)
                     st.markdown("**Select columns to include:**")
                     
@@ -1989,36 +2010,33 @@ def main():
                     col_sel1, col_sel2 = st.columns(2)
                     
                     with col_sel1:
-                        # For CSV download
                         csv_columns = st.multiselect(
                             "CSV Download Columns:",
                             options=available_columns,
                             default=available_columns,
-                            key="csv_columns_tab1"
+                            key="tab1_csv_columns"
                         )
                         
-                        # Preset buttons
                         col_p1, col_p2, col_p3 = st.columns(3)
                         with col_p1:
-                            if st.button("Basic", key="preset_basic_tab1"):
-                                st.session_state.csv_columns_tab1 = ['Temperature_K', 'Enthalpy_J_mol']
+                            if st.button("Basic", key="tab1_preset_basic"):
+                                st.session_state.tab1_csv_columns = ['Temperature_K', 'Enthalpy_J_mol']
                                 st.rerun()
                         with col_p2:
-                            if st.button("All", key="preset_all_tab1"):
-                                st.session_state.csv_columns_tab1 = available_columns
+                            if st.button("All", key="tab1_preset_all"):
+                                st.session_state.tab1_csv_columns = available_columns
                                 st.rerun()
                         with col_p3:
-                            if st.button("Clear", key="preset_clear_tab1"):
-                                st.session_state.csv_columns_tab1 = []
+                            if st.button("Clear", key="tab1_preset_clear"):
+                                st.session_state.tab1_csv_columns = []
                                 st.rerun()
                     
                     with col_sel2:
-                        # For DAT download
                         dat_columns = st.multiselect(
                             "DAT Download Columns:",
                             options=available_columns,
                             default=available_columns,
-                            key="dat_columns_tab1"
+                            key="tab1_dat_columns"
                         )
                     
                     st.markdown('</div>', unsafe_allow_html=True)
@@ -2026,14 +2044,10 @@ def main():
                     col_dl1, col_dl2 = st.columns(2)
                     
                     with col_dl1:
-                        if not csv_columns:
-                            st.warning("Please select at least one column for CSV download")
-                        else:
-                            # Filter dataframe based on selected columns
+                        if csv_columns:
                             csv_df = result_df[csv_columns].copy()
                             csv_full = csv_df.to_csv(index=False)
                             
-                            # Generate filename based on columns
                             col_suffix = "_".join([c.split('_')[0] for c in csv_columns])
                             timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
                             
@@ -2042,13 +2056,13 @@ def main():
                                 data=csv_full,
                                 file_name=f"enthalpy_{material_name.replace(' ', '_')}_{col_suffix}_{timestamp_str}.csv",
                                 mime="text/csv",
-                                key=f"csv_download_{timestamp_str}"
+                                key=f"tab1_csv_download_{timestamp_str}"
                             )
+                        else:
+                            st.warning("Please select at least one column for CSV download")
                     
                     with col_dl2:
-                        if not dat_columns:
-                            st.warning("Please select at least one column for DAT download")
-                        else:
+                        if dat_columns:
                             metadata = {
                                 'TDB File': os.path.basename(tdb_path),
                                 'Phases': ', '.join(selected_phases),
@@ -2059,11 +2073,9 @@ def main():
                                 'Timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             }
                             
-                            # Filter dataframe for DAT
                             dat_df = result_df[dat_columns].copy()
                             dat_content = analyzer.format_dat_file(dat_df, composition_mole, metadata, dat_columns)
                             
-                            # Generate filename
                             dat_suffix = "_".join([c.split('_')[0] for c in dat_columns])
                             timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
                             
@@ -2072,8 +2084,10 @@ def main():
                                 data=dat_content,
                                 file_name=f"enthalpy_{material_name.replace(' ', '_')}_{dat_suffix}_{timestamp_str}.dat",
                                 mime="text/plain",
-                                key=f"dat_download_{timestamp_str}"
+                                key=f"tab1_dat_download_{timestamp_str}"
                             )
+                        else:
+                            st.warning("Please select at least one column for DAT download")
                     
                     st.markdown('</div>', unsafe_allow_html=True)
                     
@@ -2100,7 +2114,7 @@ def main():
             "Select data source:",
             ["Use computed results from Tab 1", "Upload external CSV file"],
             horizontal=True,
-            key="data_source_tab2"
+            key="tab2_data_source"
         )
         
         if data_source == "Use computed results from Tab 1":
@@ -2113,7 +2127,7 @@ def main():
                 "Select computed result:",
                 range(len(result_options)),
                 format_func=lambda x: result_options[x],
-                key="result_select_tab2"
+                key="tab2_result_select"
             )
             
             result_data = analyzer.results_history[selected_result_idx]['data']
@@ -2133,7 +2147,7 @@ def main():
                     "Display composition as:",
                     ["Mole Fraction", "Weight Fraction"],
                     horizontal=True,
-                    key="display_comp_type_tab2"
+                    key="tab2_display_comp_type"
                 )
             
             with col_comp2:
@@ -2152,7 +2166,6 @@ def main():
             
             st.markdown('</div>', unsafe_allow_html=True)
             
-            # Store for later use
             composition_for_fitting = composition_ref
             composition_type_for_fitting = composition_type_ref
             
@@ -2160,7 +2173,7 @@ def main():
             uploaded_csv = st.file_uploader(
                 "Upload CSV with Temperature and Enthalpy columns",
                 type=['csv'],
-                key="uploader_csv_tab2"
+                key="tab2_uploader_csv"
             )
             
             if uploaded_csv is None:
@@ -2174,9 +2187,9 @@ def main():
                 
                 col1, col2 = st.columns(2)
                 with col1:
-                    temp_col = st.selectbox("Temperature column", df_upload.columns, key="temp_col_tab2")
+                    temp_col = st.selectbox("Temperature column", df_upload.columns, key="tab2_temp_col")
                 with col2:
-                    enthalpy_col = st.selectbox("Enthalpy column (J/mol)", df_upload.columns, key="enthalpy_col_tab2")
+                    enthalpy_col = st.selectbox("Enthalpy column (J/mol)", df_upload.columns, key="tab2_enthalpy_col")
                 
                 T_data = df_upload[temp_col].values
                 H_data = df_upload[enthalpy_col].values
@@ -2192,7 +2205,7 @@ def main():
                         "Input composition as:",
                         ["Mole Fraction", "Weight Fraction"],
                         horizontal=True,
-                        key="manual_comp_type_tab2"
+                        key="tab2_manual_comp_type"
                     )
                 
                 with col_man2:
@@ -2200,7 +2213,7 @@ def main():
                         "Select elements:",
                         sorted(PERIODIC_TABLE.keys()),
                         default=['AL', 'CU', 'NI'],
-                        key="manual_elements_tab2"
+                        key="tab2_manual_elements"
                     )
                 
                 if elements:
@@ -2213,11 +2226,10 @@ def main():
                                 0.0, 1.0, 
                                 1.0/len(elements) if idx < len(elements)-1 else 0.0,
                                 0.01,
-                                key=f"manual_comp_{element}_tab2"
+                                key=f"tab2_manual_comp_{element}"
                             )
                             composition_for_fitting[element] = fraction
                     
-                    # Calculate last element
                     if len(elements) > 1:
                         total = sum(composition_for_fitting.values())
                         if total < 1.0:
@@ -2248,7 +2260,7 @@ def main():
                 float(min(50.0, max(5.0, H_slope * 0.7))), 
                 0.1,
                 help="Sensible heat coefficient for solid phase",
-                key="A1_guess_tab2"
+                key="tab2_A1_guess"
             )
             A2_guess = st.number_input(
                 "A₂ initial guess (J/mol·K)", 
@@ -2256,7 +2268,7 @@ def main():
                 float(min(30.0, max(1.0, H_slope * 0.3))), 
                 0.1,
                 help="Additional sensible heat coefficient for liquid phase",
-                key="A2_guess_tab2"
+                key="tab2_A2_guess"
             )
             Tm_guess = st.number_input(
                 "Tₘ initial guess (K)", 
@@ -2264,7 +2276,7 @@ def main():
                 float(T_mid), 
                 1.0,
                 help="Melting temperature",
-                key="Tm_guess_tab2"
+                key="tab2_Tm_guess"
             )
         
         with col_p2:
@@ -2274,15 +2286,15 @@ def main():
                 float(min(30000.0, max(5000.0, H_range * 0.6))), 
                 100.0,
                 help="Heat of fusion",
-                key="DeltaHf_guess_tab2"
+                key="tab2_DeltaHf_guess"
             )
             k_guess = st.number_input(
                 "k initial guess (1/K)", 
                 0.0001, 1.0, 
                 0.01, 
                 0.001,
-                help="Sigmoid steepness parameter (controls melting transition sharpness)",
-                key="k_guess_tab2"
+                help="Sigmoid steepness parameter",
+                key="tab2_k_guess"
             )
             H298_guess = st.number_input(
                 "H₂₉₈ initial guess (J/mol)", 
@@ -2290,22 +2302,22 @@ def main():
                 float(H_data.min() * 0.9), 
                 100.0,
                 help="Reference enthalpy at 298 K",
-                key="H298_guess_tab2"
+                key="tab2_H298_guess"
             )
         
         # Advanced fitting options
         with st.expander("⚙️ Advanced Fitting Options", expanded=False):
             col_adv1, col_adv2 = st.columns(2)
             with col_adv1:
-                max_iterations = st.number_input("Maximum iterations", 100, 10000, 5000, 100, key="max_iter_tab2")
-                fit_method = st.selectbox("Fitting method", ["trf", "lm", "dogbox"], index=0, key="fit_method_tab2")
+                max_iterations = st.number_input("Maximum iterations", 100, 10000, 5000, 100, key="tab2_max_iter")
+                fit_method = st.selectbox("Fitting method", ["trf", "lm", "dogbox"], index=0, key="tab2_fit_method")
             with col_adv2:
-                confidence_level = st.slider("Confidence level (%)", 90, 99, 95, 1, key="conf_level_tab2")
-                generate_report = st.checkbox("Generate detailed report", value=True, key="gen_report_tab2")
+                confidence_level = st.slider("Confidence level (%)", 90, 99, 95, 1, key="tab2_conf_level")
+                generate_report = st.checkbox("Generate detailed report", value=True, key="tab2_gen_report")
         
         # Fit button
         st.markdown("---")
-        fit_button = st.button("🎯 Perform Curve Fit", type="primary", use_container_width=True, key="fit_button_tab2")
+        fit_button = st.button("🎯 Perform Curve Fit", type="primary", use_container_width=True, key="tab2_fit_button")
         
         if fit_button:
             with st.spinner("Fitting curve to data..."):
@@ -2343,13 +2355,12 @@ def main():
                     perr = np.sqrt(np.diag(pcov))
                     confidence_intervals = []
                     for i, param in enumerate(fit_params):
-                        ci = 1.96 * perr[i]  # 95% confidence
+                        ci = 1.96 * perr[i]
                         confidence_intervals.append((param - ci, param + ci))
                     
-                    # Calculate molar weight for specific enthalpy equation
                     molar_weight = analyzer.calculate_alloy_molar_weight(composition_for_fitting)
                     
-                    # Store fitting results in session state
+                    # Store fitting results
                     fit_result = {
                         'material_name': material_name,
                         'coefficients': {
@@ -2469,7 +2480,7 @@ def main():
                             data=coeff_df.to_csv(index=False),
                             file_name=f"fitting_coeffs_{material_name.replace(' ', '_')}_{timestamp_str}.csv",
                             mime="text/csv",
-                            key=f"coeff_csv_{timestamp_str}"
+                            key=f"tab2_coeff_csv_{timestamp_str}"
                         )
                     
                     with col_f2:
@@ -2485,7 +2496,7 @@ def main():
                             data=fitted_df.to_csv(index=False),
                             file_name=f"fitted_curve_{material_name.replace(' ', '_')}_{timestamp_str}.csv",
                             mime="text/csv",
-                            key=f"curve_csv_{timestamp_str}"
+                            key=f"tab2_curve_csv_{timestamp_str}"
                         )
                     
                     with col_f3:
@@ -2496,12 +2507,12 @@ def main():
                             data=json_data,
                             file_name=f"fitting_results_{material_name.replace(' ', '_')}_{timestamp_str}.json",
                             mime="application/json",
-                            key=f"json_results_{timestamp_str}"
+                            key=f"tab2_json_results_{timestamp_str}"
                         )
                     
                     st.markdown('</div>', unsafe_allow_html=True)
                     
-                    # Generate detailed report if requested
+                    # Generate detailed report
                     if generate_report:
                         with st.expander("📋 Detailed Fitting Report", expanded=False):
                             st.markdown(f"""
@@ -2538,7 +2549,7 @@ def main():
                 except Exception as e:
                     st.error(f"❌ Fitting error: {str(e)}")
                     st.exception(e)
-    
+
     # ==================== TAB 3: Multi-Material Comparison ====================
     with tab3:
         st.markdown('<div class="sub-header">🔄 Multi-Material Comparison</div>', unsafe_allow_html=True)
@@ -2551,7 +2562,6 @@ def main():
         st.markdown("#### 📚 Calculation History")
         
         if analyzer.history_thumbnails:
-            # Display thumbnails in a grid
             n_thumbnails = len(analyzer.history_thumbnails)
             n_cols = 4
             n_rows = (n_thumbnails + n_cols - 1) // n_cols
@@ -2581,7 +2591,7 @@ def main():
             [label for _, label in selection_options],
             default=[selection_options[i][1] for i in range(min(3, len(selection_options)))],
             max_selections=8,
-            key="material_select_tab3"
+            key="tab3_material_select"
         )
         
         if not selected_labels:
@@ -2598,17 +2608,17 @@ def main():
         # Comparison options
         col_opt1, col_opt2 = st.columns(2)
         with col_opt1:
-            show_plotly = st.checkbox("Show interactive plot (Plotly)", value=True, key="plotly_tab3")
-            normalize_data = st.checkbox("Normalize enthalpy to zero at start", value=False, key="normalize_tab3")
+            show_plotly = st.checkbox("Show interactive plot (Plotly)", value=True, key="tab3_plotly")
+            normalize_data = st.checkbox("Normalize enthalpy to zero at start", value=False, key="tab3_normalize")
         with col_opt2:
-            compare_heat_capacity = st.checkbox("Compare heat capacities", value=True, key="heat_cap_tab3")
-            show_statistics = st.checkbox("Show detailed statistics", value=True, key="stats_tab3")
+            compare_heat_capacity = st.checkbox("Compare heat capacities", value=True, key="tab3_heat_cap")
+            show_statistics = st.checkbox("Show detailed statistics", value=True, key="tab3_stats")
         
         # Apply customizations
         customizations = analyzer.plot_customizations
         
         # Create and display comparison visualization
-        if st.button("📊 Generate Comparison", type="primary", key="gen_comparison_tab3"):
+        if st.button("📊 Generate Comparison", type="primary", key="tab3_gen_comparison"):
             with st.spinner("Generating comparison visualization..."):
                 fig = create_comparison_visualization(analyzer, selected_indices, customizations)
                 if fig:
@@ -2618,25 +2628,23 @@ def main():
                         st.markdown('</div>', unsafe_allow_html=True)
         
         # Interactive Plotly visualization
-        if show_plotly:
+        if show_plotly and selected_indices:
             st.markdown("#### 📈 Interactive Visualization")
-            if selected_indices:
-                result = analyzer.results_history[selected_indices[0]]
-                data = result['data']
-                composition = result['composition']
-                material_name = result['name']
-                
-                # Find fitting results for this material
-                fitted_params = None
-                for fit_result in analyzer.fitting_results:
-                    if fit_result['material_name'] == material_name:
-                        fitted_params = fit_result['coefficients']
-                        break
-                
-                plotly_fig = create_interactive_plotly_visualization(
-                    data, composition, material_name, fitted_params
-                )
-                st.plotly_chart(plotly_fig, use_container_width=True)
+            result = analyzer.results_history[selected_indices[0]]
+            data = result['data']
+            composition = result['composition']
+            material_name = result['name']
+            
+            fitted_params = None
+            for fit_result in analyzer.fitting_results:
+                if fit_result['material_name'] == material_name:
+                    fitted_params = fit_result['coefficients']
+                    break
+            
+            plotly_fig = create_interactive_plotly_visualization(
+                data, composition, material_name, fitted_params
+            )
+            st.plotly_chart(plotly_fig, use_container_width=True)
         
         # Comparison table
         if show_statistics:
@@ -2653,7 +2661,6 @@ def main():
                 delta_h = max_h - min_h
                 avg_slope = delta_h / (data['Temperature_K'].max() - data['Temperature_K'].min())
                 
-                # Calculate heat capacity statistics
                 if len(data) > 1 and 'Heat_Capacity_J_per_mol_K' in data.columns:
                     heat_capacity = data['Heat_Capacity_J_per_mol_K']
                     avg_cp = heat_capacity.mean()
@@ -2662,7 +2669,6 @@ def main():
                     avg_cp = 0
                     max_cp = 0
                 
-                # Find melting temperature from fitting results
                 Tm = None
                 for fit_result in analyzer.fitting_results:
                     if fit_result['material_name'] == res['name']:
@@ -2696,7 +2702,6 @@ def main():
         col_c1, col_c2 = st.columns(2)
         
         with col_c1:
-            # Combine data from all selected materials
             combined_data = {'Temperature_K': analyzer.results_history[selected_indices[0]]['data']['Temperature_K'].values}
             
             for idx in selected_indices:
@@ -2716,7 +2721,7 @@ def main():
                 data=combined_df.to_csv(index=False),
                 file_name=f"multi_material_comparison_{timestamp_str}.csv",
                 mime="text/csv",
-                key=f"combined_csv_{timestamp_str}"
+                key=f"tab3_combined_csv_{timestamp_str}"
             )
         
         with col_c2:
@@ -2727,11 +2732,11 @@ def main():
                     data=summary_df.to_csv(index=False),
                     file_name=f"comparison_summary_{timestamp_str}.csv",
                     mime="text/csv",
-                    key=f"summary_csv_{timestamp_str}"
+                    key=f"tab3_summary_csv_{timestamp_str}"
                 )
         
         st.markdown('</div>', unsafe_allow_html=True)
-    
+
     # ==================== TAB 4: Phase Diagram Analysis ====================
     with tab4:
         st.markdown('<div class="sub-header">📈 Phase Diagram Analysis</div>', unsafe_allow_html=True)
@@ -2753,7 +2758,7 @@ def main():
             [label for _, label in selection_options],
             default=[selection_options[i][1] for i in range(min(3, len(selection_options)))],
             max_selections=6,
-            key="material_select_tab4"
+            key="tab4_material_select"
         )
         
         if not selected_labels:
@@ -2770,14 +2775,14 @@ def main():
         # Analysis options
         col_ana1, col_ana2 = st.columns(2)
         with col_ana1:
-            show_derivatives = st.checkbox("Show derivatives", value=True, key="derivatives_tab4")
-            show_cumulative = st.checkbox("Show cumulative enthalpy", value=False, key="cumulative_tab4")
+            show_derivatives = st.checkbox("Show derivatives", value=True, key="tab4_derivatives")
+            show_cumulative = st.checkbox("Show cumulative enthalpy", value=False, key="tab4_cumulative")
         with col_ana2:
-            normalize_plots = st.checkbox("Normalize temperature range", value=False, key="normalize_tab4")
-            highlight_transitions = st.checkbox("Highlight phase transitions", value=True, key="transitions_tab4")
+            normalize_plots = st.checkbox("Normalize temperature range", value=False, key="tab4_normalize")
+            highlight_transitions = st.checkbox("Highlight phase transitions", value=True, key="tab4_transitions")
         
         # Generate phase diagram
-        if st.button("📈 Generate Phase Diagram", type="primary", key="gen_phase_tab4"):
+        if st.button("📈 Generate Phase Diagram", type="primary", key="tab4_gen_phase"):
             with st.spinner("Generating phase diagram..."):
                 fig = create_phase_diagram_visualization(analyzer, selected_indices, analyzer.plot_customizations)
                 if fig:
@@ -2796,20 +2801,15 @@ def main():
             data = res['data']
             name = res['name']
             
-            # Calculate heat capacity
             if len(data) > 1:
                 dT = data['Temperature_K'].diff()
                 dH = data['Enthalpy_J_mol'].diff()
                 heat_capacity = dH / dT
                 
-                # Find peaks in heat capacity (potential phase transitions)
-                from scipy.signal import find_peaks
-                
                 if len(heat_capacity) > 10:
-                    # Smooth heat capacity
                     heat_capacity_smooth = heat_capacity.rolling(window=5, center=True, min_periods=1).mean()
                     
-                    # Find peaks
+                    from scipy.signal import find_peaks
                     peaks, properties = find_peaks(heat_capacity_smooth.iloc[1:].values, 
                                                   height=heat_capacity_smooth.mean(),
                                                   distance=len(heat_capacity_smooth)//10)
@@ -2833,7 +2833,7 @@ def main():
             st.markdown('</div>', unsafe_allow_html=True)
         else:
             st.info("No clear phase transitions detected in the selected materials.")
-    
+
     # ==================== TAB 5: Visualization Customization ====================
     with tab5:
         st.markdown('<div class="sub-header">🎨 Visualization Customization</div>', unsafe_allow_html=True)
@@ -2847,55 +2847,105 @@ def main():
             col_cust1, col_cust2 = st.columns(2)
             
             with col_cust1:
+                # Use widget state management for sliders
+                curve_thickness_key = "tab5_curve_thickness"
+                if curve_thickness_key not in st.session_state.widget_state:
+                    st.session_state.widget_state[curve_thickness_key] = analyzer.plot_customizations['curve_thickness']
+                
                 analyzer.plot_customizations['curve_thickness'] = st.slider(
                     "Curve Thickness",
-                    0.5, 5.0, analyzer.plot_customizations['curve_thickness'], 0.1,
+                    0.5, 5.0, 
+                    st.session_state.widget_state[curve_thickness_key], 
+                    0.1,
                     help="Thickness of plot lines",
-                    key="curve_thickness_tab5"
+                    key=curve_thickness_key
                 )
+                st.session_state.widget_state[curve_thickness_key] = analyzer.plot_customizations['curve_thickness']
+                
+                box_thickness_key = "tab5_box_thickness"
+                if box_thickness_key not in st.session_state.widget_state:
+                    st.session_state.widget_state[box_thickness_key] = analyzer.plot_customizations['box_thickness']
                 
                 analyzer.plot_customizations['box_thickness'] = st.slider(
                     "Box/Spine Thickness",
-                    0.5, 5.0, analyzer.plot_customizations['box_thickness'], 0.1,
+                    0.5, 5.0, 
+                    st.session_state.widget_state[box_thickness_key], 
+                    0.1,
                     help="Thickness of plot borders",
-                    key="box_thickness_tab5"
+                    key=box_thickness_key
                 )
+                st.session_state.widget_state[box_thickness_key] = analyzer.plot_customizations['box_thickness']
+                
+                marker_size_key = "tab5_marker_size"
+                if marker_size_key not in st.session_state.widget_state:
+                    st.session_state.widget_state[marker_size_key] = analyzer.plot_customizations['marker_size']
                 
                 analyzer.plot_customizations['marker_size'] = st.slider(
                     "Marker Size",
-                    2, 15, analyzer.plot_customizations['marker_size'], 1,
+                    2, 15, 
+                    st.session_state.widget_state[marker_size_key], 
+                    1,
                     help="Size of data point markers",
-                    key="marker_size_tab5"
+                    key=marker_size_key
                 )
+                st.session_state.widget_state[marker_size_key] = analyzer.plot_customizations['marker_size']
+                
+                grid_alpha_key = "tab5_grid_alpha"
+                if grid_alpha_key not in st.session_state.widget_state:
+                    st.session_state.widget_state[grid_alpha_key] = analyzer.plot_customizations['grid_alpha']
                 
                 analyzer.plot_customizations['grid_alpha'] = st.slider(
                     "Grid Transparency",
-                    0.0, 1.0, analyzer.plot_customizations['grid_alpha'], 0.05,
+                    0.0, 1.0, 
+                    st.session_state.widget_state[grid_alpha_key], 
+                    0.05,
                     help="Transparency of grid lines",
-                    key="grid_alpha_tab5"
+                    key=grid_alpha_key
                 )
+                st.session_state.widget_state[grid_alpha_key] = analyzer.plot_customizations['grid_alpha']
             
             with col_cust2:
+                font_size_key = "tab5_font_size"
+                if font_size_key not in st.session_state.widget_state:
+                    st.session_state.widget_state[font_size_key] = analyzer.plot_customizations['font_size']
+                
                 analyzer.plot_customizations['font_size'] = st.slider(
                     "Font Size",
-                    8, 20, analyzer.plot_customizations['font_size'], 1,
+                    8, 20, 
+                    st.session_state.widget_state[font_size_key], 
+                    1,
                     help="Base font size for labels",
-                    key="font_size_tab5"
+                    key=font_size_key
                 )
+                st.session_state.widget_state[font_size_key] = analyzer.plot_customizations['font_size']
+                
+                title_font_size_key = "tab5_title_font_size"
+                if title_font_size_key not in st.session_state.widget_state:
+                    st.session_state.widget_state[title_font_size_key] = analyzer.plot_customizations['title_font_size']
                 
                 analyzer.plot_customizations['title_font_size'] = st.slider(
                     "Title Font Size",
-                    10, 24, analyzer.plot_customizations['title_font_size'], 1,
+                    10, 24, 
+                    st.session_state.widget_state[title_font_size_key], 
+                    1,
                     help="Font size for titles",
-                    key="title_font_size_tab5"
+                    key=title_font_size_key
                 )
+                st.session_state.widget_state[title_font_size_key] = analyzer.plot_customizations['title_font_size']
+                
+                legend_font_size_key = "tab5_legend_font_size"
+                if legend_font_size_key not in st.session_state.widget_state:
+                    st.session_state.widget_state[legend_font_size_key] = analyzer.plot_customizations['legend_font_size']
                 
                 analyzer.plot_customizations['legend_font_size'] = st.slider(
                     "Legend Font Size",
-                    8, 16, analyzer.plot_customizations['legend_font_size'], 1,
+                    8, 16, 
+                    st.session_state.widget_state[legend_font_size_key], 
+                    1,
                     help="Font size for legend text",
-                    key="legend_font_size_tab5"
+                    key=legend_font_size_key
                 )
+                st.session_state.widget_state[legend_font_size_key] = analyzer.plot_customizations['legend_font_size']
                 
                 analyzer.plot_customizations['legend_location'] = st.selectbox(
                     "Legend Location",
@@ -2906,7 +2956,7 @@ def main():
                           'right', 'center left', 'center right', 'lower center', 
                           'upper center', 'center'].index(analyzer.plot_customizations['legend_location']),
                     help="Position of the legend",
-                    key="legend_location_tab5"
+                    key="tab5_legend_location"
                 )
         
         with cust_tab2:
@@ -2914,13 +2964,12 @@ def main():
             col_style1, col_style2 = st.columns(2)
             
             with col_style1:
-                # Colormap selection
                 analyzer.plot_customizations['colormap'] = st.selectbox(
                     "Select Colormap",
                     COLORMAPS,
                     index=COLORMAPS.index(analyzer.plot_customizations['colormap']),
                     help="Color scheme for plots",
-                    key="colormap_tab5"
+                    key="tab5_colormap"
                 )
                 
                 # Display colormap preview
@@ -2940,43 +2989,63 @@ def main():
                 st.pyplot(fig_cmap)
                 plt.close(fig_cmap)
                 
-                # Plot style selection
                 available_styles = plt.style.available
                 analyzer.plot_customizations['plot_style'] = st.selectbox(
                     "Plot Style",
                     ['default'] + available_styles,
                     index=0,
                     help="Matplotlib style for plots",
-                    key="plot_style_tab5"
+                    key="tab5_plot_style"
                 )
             
             with col_style2:
+                tick_size_key = "tab5_tick_size"
+                if tick_size_key not in st.session_state.widget_state:
+                    st.session_state.widget_state[tick_size_key] = analyzer.plot_customizations['tick_size']
+                
                 analyzer.plot_customizations['tick_size'] = st.slider(
                     "Tick Label Size",
-                    8, 16, analyzer.plot_customizations['tick_size'], 1,
+                    8, 16, 
+                    st.session_state.widget_state[tick_size_key], 
+                    1,
                     help="Size of tick labels",
-                    key="tick_size_tab5"
+                    key=tick_size_key
                 )
+                st.session_state.widget_state[tick_size_key] = analyzer.plot_customizations['tick_size']
+                
+                label_fontsize_key = "tab5_label_fontsize"
+                if label_fontsize_key not in st.session_state.widget_state:
+                    st.session_state.widget_state[label_fontsize_key] = analyzer.plot_customizations['label_fontsize']
                 
                 analyzer.plot_customizations['label_fontsize'] = st.slider(
                     "Axis Label Size",
-                    8, 16, analyzer.plot_customizations['label_fontsize'], 1,
+                    8, 16, 
+                    st.session_state.widget_state[label_fontsize_key], 
+                    1,
                     help="Size of axis labels",
-                    key="label_fontsize_tab5"
+                    key=label_fontsize_key
                 )
+                st.session_state.widget_state[label_fontsize_key] = analyzer.plot_customizations['label_fontsize']
+                
+                annotation_fontsize_key = "tab5_annotation_fontsize"
+                if annotation_fontsize_key not in st.session_state.widget_state:
+                    st.session_state.widget_state[annotation_fontsize_key] = analyzer.plot_customizations.get('annotation_fontsize', 9)
                 
                 analyzer.plot_customizations['annotation_fontsize'] = st.slider(
                     "Annotation Font Size",
-                    6, 14, analyzer.plot_customizations.get('annotation_fontsize', 9), 1,
+                    6, 14, 
+                    st.session_state.widget_state[annotation_fontsize_key], 
+                    1,
                     help="Size of annotation text",
-                    key="annotation_fontsize_tab5"
+                    key=annotation_fontsize_key
                 )
+                st.session_state.widget_state[annotation_fontsize_key] = analyzer.plot_customizations['annotation_fontsize']
                 
                 analyzer.plot_customizations['transparent_bg'] = st.checkbox(
                     "Transparent Background",
                     value=analyzer.plot_customizations.get('transparent_bg', False),
                     help="Use transparent background for plots",
-                    key="transparent_bg_tab5"
+                    key="tab5_transparent_bg"
                 )
         
         with cust_tab3:
@@ -2984,35 +3053,56 @@ def main():
             col_layout1, col_layout2 = st.columns(2)
             
             with col_layout1:
+                # FIXED: Using unique keys for sliders with widget state management
+                figure_width_key = "tab5_figure_width"
+                if figure_width_key not in st.session_state.widget_state:
+                    st.session_state.widget_state[figure_width_key] = analyzer.plot_customizations['figure_width']
+                
                 analyzer.plot_customizations['figure_width'] = st.slider(
                     "Figure Width (inches)",
-                    8.0, 20.0, analyzer.plot_customizations['figure_width'], 0.5,
+                    8.0, 20.0, 
+                    st.session_state.widget_state[figure_width_key], 
+                    0.5,
                     help="Width of the figure in inches",
-                    key="figure_width_tab5"
+                    key=figure_width_key
                 )
+                st.session_state.widget_state[figure_width_key] = analyzer.plot_customizations['figure_width']
+                
+                figure_height_key = "tab5_figure_height"
+                if figure_height_key not in st.session_state.widget_state:
+                    st.session_state.widget_state[figure_height_key] = analyzer.plot_customizations['figure_height']
                 
                 analyzer.plot_customizations['figure_height'] = st.slider(
                     "Figure Height (inches)",
-                    6.0, 16.0, analyzer.plot_customizations['figure_height'], 0.5,
+                    6.0, 16.0, 
+                    st.session_state.widget_state[figure_height_key], 
+                    0.5,
                     help="Height of the figure in inches",
-                    key="figure_height_tab5"
+                    key=figure_height_key
                 )
+                st.session_state.widget_state[figure_height_key] = analyzer.plot_customizations['figure_height']
             
             with col_layout2:
+                dpi_key = "tab5_dpi"
+                if dpi_key not in st.session_state.widget_state:
+                    st.session_state.widget_state[dpi_key] = analyzer.plot_customizations.get('dpi', 150)
+                
                 analyzer.plot_customizations['dpi'] = st.slider(
                     "Figure DPI",
-                    72, 300, analyzer.plot_customizations.get('dpi', 150), 10,
+                    72, 300, 
+                    st.session_state.widget_state[dpi_key], 
+                    10,
                     help="Resolution of exported figures",
-                    key="dpi_tab5"
+                    key=dpi_key
                 )
+                st.session_state.widget_state[dpi_key] = analyzer.plot_customizations['dpi']
                 
-                # Export format
                 export_format = st.selectbox(
                     "Default Export Format",
                     ['PNG', 'PDF', 'SVG', 'EPS'],
                     index=0,
                     help="Default format for figure exports",
-                    key="export_format_tab5"
+                    key="tab5_export_format"
                 )
         
         # Save and reset buttons
@@ -3020,12 +3110,12 @@ def main():
         col_save1, col_save2, col_save3 = st.columns(3)
         
         with col_save1:
-            if st.button("💾 Save Customizations", use_container_width=True, key="save_cust_tab5"):
+            if st.button("💾 Save Customizations", use_container_width=True, key="tab5_save_cust"):
                 st.success("✅ Customizations saved!")
                 st.rerun()
         
         with col_save2:
-            if st.button("🔄 Reset to Defaults", use_container_width=True, key="reset_cust_tab5"):
+            if st.button("🔄 Reset to Defaults", use_container_width=True, key="tab5_reset_cust"):
                 analyzer.plot_customizations = {
                     'curve_thickness': 2.5,
                     'box_thickness': 1.0,
@@ -3045,11 +3135,15 @@ def main():
                     'transparent_bg': False,
                     'annotation_fontsize': 9
                 }
+                # Clear widget states
+                for key in list(st.session_state.widget_state.keys()):
+                    if key.startswith("tab5_"):
+                        del st.session_state.widget_state[key]
                 st.success("✅ Customizations reset to defaults!")
                 st.rerun()
         
         with col_save3:
-            if st.button("🎨 Apply to All Plots", use_container_width=True, key="apply_cust_tab5"):
+            if st.button("🎨 Apply to All Plots", use_container_width=True, key="tab5_apply_cust"):
                 st.info("Customizations will be applied to all new plots.")
                 st.rerun()
         
@@ -3060,7 +3154,6 @@ def main():
         col_exp1, col_exp2 = st.columns(2)
         
         with col_exp1:
-            # Export
             json_custom = json.dumps(analyzer.plot_customizations, indent=4)
             timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
             st.download_button(
@@ -3068,15 +3161,14 @@ def main():
                 data=json_custom,
                 file_name=f"plot_customizations_{timestamp_str}.json",
                 mime="application/json",
-                key=f"export_settings_{timestamp_str}"
+                key=f"tab5_export_settings_{timestamp_str}"
             )
         
         with col_exp2:
-            # Import
             uploaded_custom = st.file_uploader(
                 "Import settings from JSON",
                 type=['json'],
-                key="upload_custom_tab5"
+                key="tab5_upload_custom"
             )
             
             if uploaded_custom is not None:
@@ -3087,7 +3179,7 @@ def main():
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error importing customizations: {str(e)}")
-    
+
     # ==================== TAB 6: Help & Settings ====================
     with tab6:
         st.markdown('<div class="sub-header">ℹ️ Help & Application Settings</div>', unsafe_allow_html=True)
@@ -3179,18 +3271,21 @@ def main():
             col_data1, col_data2 = st.columns(2)
             
             with col_data1:
-                if st.button("🗑️ Clear All Data", type="secondary", use_container_width=True, key="clear_data_tab6"):
+                if st.button("🗑️ Clear All Data", type="secondary", use_container_width=True, key="tab6_clear_data"):
                     analyzer.results_history = []
                     analyzer.fitting_results = []
                     analyzer.history_thumbnails = []
+                    st.session_state.simulation_cache = {}
+                    st.session_state.widget_state = {}
                     st.success("✅ All session data cleared!")
                     st.rerun()
             
             with col_data2:
-                if st.button("💾 Export Session", type="secondary", use_container_width=True, key="export_session_tab6"):
+                if st.button("💾 Export Session", type="secondary", use_container_width=True, key="tab6_export_session"):
                     session_data = {
                         'results_history': analyzer.results_history,
                         'fitting_results': analyzer.fitting_results,
+                        'simulation_cache': st.session_state.simulation_cache,
                         'customizations': analyzer.plot_customizations,
                         'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         'version': 'Thermodynamic Enthalpy Analyzer Pro v3.0'
@@ -3202,7 +3297,7 @@ def main():
                         data=json_data,
                         file_name=f"enthalpy_analyzer_session_{timestamp_str}.json",
                         mime="application/json",
-                        key=f"session_download_{timestamp_str}"
+                        key=f"tab6_session_download_{timestamp_str}"
                     )
             
             # Database management
@@ -3219,10 +3314,10 @@ def main():
                         size_kb = os.path.getsize(file_path) / 1024
                         st.caption(f"`{tdb}` ({size_kb:.1f} KB)")
                     with col_db2:
-                        if st.button("ℹ️", key=f"info_{tdb}_tab6"):
+                        if st.button("ℹ️", key=f"tab6_info_{tdb}"):
                             st.info(f"**{tdb}**\nSize: {size_kb:.1f} KB\nPath: {file_path}")
                     with col_db3:
-                        if st.button("🗑️", key=f"delete_{tdb}_tab6"):
+                        if st.button("🗑️", key=f"tab6_delete_{tdb}"):
                             try:
                                 os.remove(file_path)
                                 st.success(f"Deleted {tdb}")
@@ -3240,7 +3335,7 @@ def main():
                 "Explore element properties:",
                 sorted(PERIODIC_TABLE.keys()),
                 format_func=lambda x: f"{PERIODIC_TABLE[x][0]} - {PERIODIC_TABLE[x][1]}",
-                key="element_explorer_tab6"
+                key="tab6_element_explorer"
             )
             
             if selected_element:
@@ -3283,7 +3378,10 @@ def main():
             - pycalphad, scipy, xarray
             - matplotlib, plotly, streamlit
             
-            
+            **Session State Management:**
+            - Results are cached to prevent re-computation
+            - Widget keys are properly managed to avoid conflicts
+            - All data persists across tab switches and downloads
             """)
     
     # Footer
@@ -3292,6 +3390,7 @@ def main():
         '<div class="session-info">'
         f'🔥 Thermodynamic Enthalpy Analyzer Pro v3.0 | '
         f'Session: {len(analyzer.results_history)} results, {len(analyzer.fitting_results)} fits | '
+        f'Cache: {len(st.session_state.simulation_cache)} simulations | '
         f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}'
         '</div>',
         unsafe_allow_html=True
