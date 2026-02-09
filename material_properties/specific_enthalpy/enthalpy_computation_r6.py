@@ -19,6 +19,7 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import base64
 from io import BytesIO
+
 warnings.filterwarnings('ignore')
 
 # Page configuration
@@ -123,7 +124,6 @@ st.markdown("""
 
 # COMPREHENSIVE PERIODIC TABLE DATA (118 elements with complete information)
 PERIODIC_TABLE = {
-    # Element: [Symbol, Name, AtomicNumber, MolarWeight(g/mol), Density(g/cm³), MeltingPoint(K), BoilingPoint(K), Group, Period, Block]
     'H': ['H', 'Hydrogen', 1, 1.008, 0.0000899, 14.01, 20.28, 1, 1, 's'],
     'HE': ['He', 'Helium', 2, 4.0026, 0.0001785, 0.95, 4.22, 18, 1, 's'],
     'LI': ['Li', 'Lithium', 3, 6.94, 0.534, 453.65, 1603, 1, 2, 's'],
@@ -265,6 +265,15 @@ COLORMAPS = [
     'Purples', 'RdYlBu', 'Spectral', 'PiYG', 'PRGn',
     'BrBG', 'RdGy', 'PuOr', 'Set3', 'flag_r'
 ]
+
+# --- CACHING FUNCTION TO PREVENT RESTART ---
+@st.cache_data(show_spinner=False, hash_funcs={"pycalphad.core.Database": lambda _: None})
+def cached_equilibrium_calculation(_dbf, components, phases, conditions, output):
+    """
+    Cached wrapper for pycalphad equilibrium. 
+    This prevents the simulation from restarting when downloading or interacting with UI.
+    """
+    return equilibrium(_dbf, components, phases, conditions, output=output, verbose=False, broadcast=False)
 
 class EnthalpyAnalyzer:
     def __init__(self):
@@ -454,7 +463,9 @@ class EnthalpyAnalyzer:
         label_fontsize = customizations.get('label_fontsize', 12)
         
         # Create figure with enhanced spacing and padding
+        # Explicitly defining layout space to prevent overlap
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(figure_width, figure_height), dpi=150)
+        plt.subplots_adjust(hspace=0.35, top=0.92, bottom=0.08, left=0.08, right=0.95)
         
         # Generate color based on composition hash
         color_hash = hash(str(sorted(composition.items()))) % 256 / 256.0
@@ -490,8 +501,10 @@ class EnthalpyAnalyzer:
                      fontsize=title_font_size, fontweight='bold', pad=20)
         ax1.grid(True, alpha=grid_alpha, linestyle='--')
         
-        # Enhanced legend placement to avoid overlap
+        # Enhanced legend placement: If 'best' is chosen, try to place it intelligently, 
+        # otherwise use explicit coordinates to avoid overlap.
         if legend_location == 'best':
+            # Check if stats box might interfere
             legend = ax1.legend(fontsize=legend_font_size, framealpha=0.9, loc='upper left',
                                bbox_to_anchor=(0.01, 0.99))
         else:
@@ -544,8 +557,8 @@ class EnthalpyAnalyzer:
         if len(composition) > 4:
             comp_text += f", ... (+{len(composition)-4} more)"
         
-        # Position composition text at bottom with buffer
-        fig.text(0.5, 0.01, f'Composition: {comp_text}',
+        # Position composition text at bottom with buffer using transform to prevent overlap
+        fig.text(0.5, 0.005, f'Composition: {comp_text}',
                  ha='center', fontsize=font_size-1, style='italic', alpha=0.8,
                  fontweight='medium', bbox=dict(boxstyle='round,pad=0.5', facecolor='wheat', alpha=0.3))
         
@@ -561,8 +574,8 @@ class EnthalpyAnalyzer:
                  bbox=dict(boxstyle='round,pad=0.8', facecolor='lightblue', alpha=0.7,
                           linewidth=1.5, edgecolor='navy'))
         
-        # Enhanced layout with more padding based on figure size
-        plt.tight_layout(rect=[0.02, 0.05, 0.98, 0.95], h_pad=3.0, w_pad=2.0)
+        # Note: tight_layout is not called here because we used subplots_adjust explicitly
+        # which provides more control over preventing overlaps in complex layouts.
         
         return fig
     
@@ -588,9 +601,10 @@ class EnthalpyAnalyzer:
         tick_size = customizations.get('tick_size', 11)
         label_fontsize = customizations.get('label_fontsize', 12)
         
-        # Create figure with enhanced layout
+        # Create figure with enhanced layout - increased spacing to prevent overlap
         fig = plt.figure(figsize=(figure_width, figure_height), dpi=150)
-        gs = fig.add_gridspec(3, 3, hspace=0.35, wspace=0.35)
+        gs = fig.add_gridspec(3, 3, hspace=0.4, wspace=0.35)
+        
         ax1 = fig.add_subplot(gs[0, :])  # Molar enthalpy comparison
         ax2 = fig.add_subplot(gs[1, 0:2])  # Specific enthalpy comparison
         ax3 = fig.add_subplot(gs[1, 2])   # ΔH comparison bar chart
@@ -654,7 +668,11 @@ class EnthalpyAnalyzer:
         ax1.set_ylabel('Enthalpy (J/mol)', fontsize=label_fontsize, fontweight='bold', labelpad=10)
         ax1.set_title('Molar Enthalpy Comparison', fontsize=title_font_size, fontweight='bold', pad=20)
         ax1.grid(True, alpha=grid_alpha, linestyle='--')
-        ax1.legend(loc=legend_location, fontsize=legend_font_size, ncol=2, framealpha=0.9)
+        
+        # Legend placed outside to avoid overlap with curves
+        ax1.legend(loc=legend_location, fontsize=legend_font_size, ncol=2, framealpha=0.9,
+                  bbox_to_anchor=(1.01, 1) if legend_location == 'best' else None)
+        
         ax1.tick_params(axis='both', labelsize=tick_size, pad=8)
         
         # Format specific enthalpy plot
@@ -711,7 +729,9 @@ class EnthalpyAnalyzer:
         
         plt.suptitle('Multi-Material Enthalpy Comparison Dashboard',
                     fontsize=title_font_size+2, fontweight='bold', y=0.98)
-        plt.tight_layout()
+        
+        # Explicit adjustment to ensure title doesn't overlap top plots
+        plt.subplots_adjust(top=0.93)
         
         return fig
     
@@ -826,7 +846,8 @@ class EnthalpyAnalyzer:
         
         # Create figure with enhanced layout
         fig = plt.figure(figsize=(figure_width, figure_height), dpi=150)
-        gs = fig.add_gridspec(3, 3, hspace=0.3, wspace=0.3)
+        # Increased spacing to prevent overlap between subplots
+        gs = fig.add_gridspec(3, 3, hspace=0.4, wspace=0.3)
         
         # Main fit plot with enhanced padding
         ax1 = fig.add_subplot(gs[0:2, :])
@@ -915,14 +936,15 @@ class EnthalpyAnalyzer:
             for spine in ax.spines.values():
                 spine.set_linewidth(box_thickness)
         
-        # Add composition info at the bottom
+        # Add composition info at the bottom using transform to prevent overlap
         comp_text = 'Composition: ' + ', '.join([f'{e}={f:.3f}' for e, f in list(composition.items())[:4]])
         if len(composition) > 4:
             comp_text += f" ... (+{len(composition)-4} more)"
-        fig.text(0.5, 0.02, comp_text, ha='center', fontsize=font_size-1,
+        fig.text(0.5, 0.01, comp_text, ha='center', fontsize=font_size-1,
                 style='italic', alpha=0.8, fontweight='medium')
         
-        plt.tight_layout(rect=[0, 0.03, 1, 0.97])
+        # Adjust layout specifically to make room for the bottom text and title
+        plt.tight_layout(rect=[0, 0.04, 1, 0.96])
         
         return fig
 
@@ -1169,14 +1191,14 @@ def main():
                             conditions[v.X(element)] = composition_mole[element]
                     
                     elements_with_va = selected_elements + ['VA']
-                    eq_result = equilibrium(
+                    
+                    # USE CACHED FUNCTION TO PREVENT RESTART
+                    eq_result = cached_equilibrium_calculation(
                         dbf,
                         elements_with_va,
                         selected_phases,
                         conditions,
-                        output=output_key,
-                        verbose=False,
-                        broadcast=False
+                        output_key
                     )
                     
                     # Extract results
@@ -2063,6 +2085,13 @@ def main():
                         mime="application/json"
                     )
             
+            # Cache management
+            st.markdown("#### 🗄️ Cache Management")
+            if st.button("🔄 Reset Computation Cache", type="secondary", use_container_width=True):
+                st.cache_data.clear()
+                st.toast("Computation cache cleared!", icon="🧹")
+                st.success("✅ Cache cleared. Next computation will run fresh.")
+            
             # Database management
             st.markdown("#### 🗄️ Database Management")
             tdb_files = analyzer.get_available_tdb_files()
@@ -2135,7 +2164,7 @@ def main():
             - pycalphad, scipy, xarray
             - matplotlib, plotly, streamlit
             
-            © 2026 Thermodynamic Analysis Toolkit
+           
         """)
     
     # Footer
