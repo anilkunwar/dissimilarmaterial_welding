@@ -1084,7 +1084,7 @@ def create_comparison_visualization(analyzer, selected_indices, customizations=N
     fig.text(0.02, 0.02, f"Generated: {timestamp}", fontsize=8, alpha=0.6)
     
     return fig
-
+#
 def create_interactive_plotly_visualization(df, composition, material_name, fitted_params=None):
     """Create interactive Plotly visualization with enhanced features"""
     # Create subplots with different layout
@@ -1202,17 +1202,21 @@ def create_interactive_plotly_visualization(df, composition, material_name, fitt
         ['Composition', ', '.join([f'{k}:{v:.3f}' for k, v in list(composition.items())[:3]])]
     ]
     
+    # FIXED: Properly structured table trace
     fig.add_trace(
         go.Table(
-            header=dict(values=['Property', 'Value'],
-                       fill_color='#1E88E5',
-                       align='center',
-                       font=dict(color='white', size=12)),
-            cells=dict(values=[row[0] for row in stats_data], 
-                      [row[1] for row in stats_data],
-                      fill_color='white',
-                      align='center',
-                      font=dict(color='black', size=11)),
+            header=dict(
+                values=['Property', 'Value'],
+                fill_color='#1E88E5',
+                align='center',
+                font=dict(color='white', size=12)
+            ),
+            cells=dict(
+                values=[[row[0] for row in stats_data], [row[1] for row in stats_data]],
+                fill_color='white',
+                align='center',
+                font=dict(color='black', size=11)
+            ),
             columnwidth=[0.4, 0.6]
         ),
         row=3, col=2
@@ -1262,6 +1266,7 @@ def create_interactive_plotly_visualization(df, composition, material_name, fitt
     fig.update_yaxes(title_text='Phase Fraction', row=3, col=1)
     
     return fig
+
 
 def create_curve_fitting_visualization(T_data, H_data, T_fit, H_fit, fit_params, residuals, 
                                       r_squared, rmse, material_name, composition, 
@@ -3278,7 +3283,7 @@ def main():
             - pycalphad, scipy, xarray
             - matplotlib, plotly, streamlit
             
-            © 2026 Thermodynamic Analysis Toolkit
+            
             """)
     
     # Footer
