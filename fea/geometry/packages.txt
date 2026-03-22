@@ -1,1 +1,2 @@
 libGLU.so.1
+libglu1-mesa
