@@ -1,5 +1,6 @@
 import streamlit as st
 import plotly.graph_objects as go
+import numpy as np
 
 st.set_page_config(page_title="Butt Weld Joint Parametric GUI", layout="wide")
 st.title("🔧 Butt Weld Joint – Parametric Geometry & Mesh Generator (SALOME)")
@@ -22,33 +23,140 @@ local_length = st.sidebar.number_input("1D Linear Local Length", value=2.3616, s
 max_area = st.sidebar.number_input("2D Triangular Max Element Area", value=50.04, step=0.01, format="%.4f")
 max_vol = st.sidebar.number_input("3D Max Element Volume", value=1181.7, step=0.1, format="%.4f")
 
-# ====================== GEOMETRY PREVIEW ======================
+# ====================== HELPER FUNCTIONS FOR VISUALIZATION ======================
 def add_box_edges(fig, xmin, ymin, zmin, xmax, ymax, zmax, color, name):
+    """Draw the 12 edges of a box."""
     edges = [
-        [[xmin,ymin,zmin],[xmax,ymin,zmin]], [[xmax,ymin,zmin],[xmax,ymax,zmin]],
-        [[xmax,ymax,zmin],[xmin,ymax,zmin]], [[xmin,ymax,zmin],[xmin,ymin,zmin]],
-        [[xmin,ymin,zmax],[xmax,ymin,zmax]], [[xmax,ymin,zmax],[xmax,ymax,zmax]],
-        [[xmax,ymax,zmax],[xmin,ymax,zmax]], [[xmin,ymax,zmax],[xmin,ymin,zmax]],
-        [[xmin,ymin,zmin],[xmin,ymin,zmax]], [[xmax,ymin,zmin],[xmax,ymin,zmax]],
-        [[xmax,ymax,zmin],[xmax,ymax,zmax]], [[xmin,ymax,zmin],[xmin,ymax,zmax]],
+        [[xmin, ymin, zmin], [xmax, ymin, zmin]],
+        [[xmax, ymin, zmin], [xmax, ymax, zmin]],
+        [[xmax, ymax, zmin], [xmin, ymax, zmin]],
+        [[xmin, ymax, zmin], [xmin, ymin, zmin]],
+        [[xmin, ymin, zmax], [xmax, ymin, zmax]],
+        [[xmax, ymin, zmax], [xmax, ymax, zmax]],
+        [[xmax, ymax, zmax], [xmin, ymax, zmax]],
+        [[xmin, ymax, zmax], [xmin, ymin, zmax]],
+        [[xmin, ymin, zmin], [xmin, ymin, zmax]],
+        [[xmax, ymin, zmin], [xmax, ymin, zmax]],
+        [[xmax, ymax, zmin], [xmax, ymax, zmax]],
+        [[xmin, ymax, zmin], [xmin, ymax, zmax]],
     ]
     for e in edges:
         fig.add_trace(go.Scatter3d(
             x=[e[0][0], e[1][0]], y=[e[0][1], e[1][1]], z=[e[0][2], e[1][2]],
-            mode='lines', line=dict(color=color, width=5), name=name, showlegend=False
+            mode='lines', line=dict(color=color, width=4), name=name, showlegend=False
         ))
     return fig
 
+def add_mesh_grid(fig, xmin, ymin, zmin, xmax, ymax, zmax, step, color='lightgray'):
+    """Draw a grid on all faces of a box using the given step size."""
+    # Avoid too many lines if step is very small
+    max_lines = 30
+    nx = max(1, min(int((xmax - xmin) / step), max_lines))
+    ny = max(1, min(int((ymax - ymin) / step), max_lines))
+    nz = max(1, min(int((zmax - zmin) / step), max_lines))
+
+    xs = np.linspace(xmin, xmax, nx+1)
+    ys = np.linspace(ymin, ymax, ny+1)
+    zs = np.linspace(zmin, zmax, nz+1)
+
+    # Face at z = zmin (bottom)
+    for y in ys:
+        fig.add_trace(go.Scatter3d(
+            x=[xmin, xmax], y=[y, y], z=[zmin, zmin],
+            mode='lines', line=dict(color=color, width=1), showlegend=False
+        ))
+    for x in xs:
+        fig.add_trace(go.Scatter3d(
+            x=[x, x], y=[ymin, ymax], z=[zmin, zmin],
+            mode='lines', line=dict(color=color, width=1), showlegend=False
+        ))
+
+    # Face at z = zmax (top)
+    for y in ys:
+        fig.add_trace(go.Scatter3d(
+            x=[xmin, xmax], y=[y, y], z=[zmax, zmax],
+            mode='lines', line=dict(color=color, width=1), showlegend=False
+        ))
+    for x in xs:
+        fig.add_trace(go.Scatter3d(
+            x=[x, x], y=[ymin, ymax], z=[zmax, zmax],
+            mode='lines', line=dict(color=color, width=1), showlegend=False
+        ))
+
+    # Face at y = ymin (front)
+    for x in xs:
+        fig.add_trace(go.Scatter3d(
+            x=[x, x], y=[ymin, ymin], z=[zmin, zmax],
+            mode='lines', line=dict(color=color, width=1), showlegend=False
+        ))
+    for z in zs:
+        fig.add_trace(go.Scatter3d(
+            x=[xmin, xmax], y=[ymin, ymin], z=[z, z],
+            mode='lines', line=dict(color=color, width=1), showlegend=False
+        ))
+
+    # Face at y = ymax (back)
+    for x in xs:
+        fig.add_trace(go.Scatter3d(
+            x=[x, x], y=[ymax, ymax], z=[zmin, zmax],
+            mode='lines', line=dict(color=color, width=1), showlegend=False
+        ))
+    for z in zs:
+        fig.add_trace(go.Scatter3d(
+            x=[xmin, xmax], y=[ymax, ymax], z=[z, z],
+            mode='lines', line=dict(color=color, width=1), showlegend=False
+        ))
+
+    # Face at x = xmin (left)
+    for y in ys:
+        fig.add_trace(go.Scatter3d(
+            x=[xmin, xmin], y=[y, y], z=[zmin, zmax],
+            mode='lines', line=dict(color=color, width=1), showlegend=False
+        ))
+    for z in zs:
+        fig.add_trace(go.Scatter3d(
+            x=[xmin, xmin], y=[ymin, ymax], z=[z, z],
+            mode='lines', line=dict(color=color, width=1), showlegend=False
+        ))
+
+    # Face at x = xmax (right)
+    for y in ys:
+        fig.add_trace(go.Scatter3d(
+            x=[xmax, xmax], y=[y, y], z=[zmin, zmax],
+            mode='lines', line=dict(color=color, width=1), showlegend=False
+        ))
+    for z in zs:
+        fig.add_trace(go.Scatter3d(
+            x=[xmax, xmax], y=[ymin, ymax], z=[z, z],
+            mode='lines', line=dict(color=color, width=1), showlegend=False
+        ))
+
+# ====================== GEOMETRY PREVIEW ======================
 fig = go.Figure()
+
+# Box 1 (front) – from (0,0,0) to (v2x, v2y, v2z)
 add_box_edges(fig, 0, 0, 0, v2x, v2y, v2z, "blue", "Box_1 (front)")
+add_mesh_grid(fig, 0, 0, 0, v2x, v2y, v2z, local_length, "blue")
+
+# Box 2 (back) – from (min(v2x,v3x), min(v2y,v3y), min(v2z,v3z)) to (max(...), ...)
 bx2_xmin, bx2_xmax = min(v2x, v3x), max(v2x, v3x)
 bx2_ymin, bx2_ymax = min(v2y, v3y), max(v2y, v3y)
 bx2_zmin, bx2_zmax = min(v2z, v3z), max(v2z, v3z)
 add_box_edges(fig, bx2_xmin, bx2_ymin, bx2_zmin, bx2_xmax, bx2_ymax, bx2_zmax, "red", "Box_2 (back)")
+add_mesh_grid(fig, bx2_xmin, bx2_ymin, bx2_zmin, bx2_xmax, bx2_ymax, bx2_zmax, local_length, "red")
+
+# Mark the origin (0,0,0) with a small sphere
+fig.add_trace(go.Scatter3d(
+    x=[0], y=[0], z=[0],
+    mode='markers', marker=dict(size=4, color='black'), name='Origin (0,0,0)'
+))
 
 fig.update_layout(
     title="Live 3D Geometry Preview (Butt Weld Joint)",
-    scene=dict(xaxis_title='X (Length)', yaxis_title='Y (Width)', zaxis_title='Z (Height)'),
+    scene=dict(
+        xaxis_title='X (Length)', yaxis_title='Y (Width)', zaxis_title='Z (Height)',
+        aspectmode='data'          # <-- Fixes the scaling: now Z thickness is shown correctly
+    ),
     height=600, margin=dict(l=0, r=0, b=0, t=40)
 )
 
@@ -64,11 +172,12 @@ with col2:
               f"X-span {bx2_xmax-bx2_xmin} × Y-span {bx2_ymax-bx2_ymin} × Z-span {bx2_zmax-bx2_zmin}")
 
 st.subheader("🧱 Mesh Parameters (will be used)")
-st.write(f"**1D Linear Local Length:** {local_length}")
+st.write(f"**1D Linear Local Length:** {local_length} (used for grid preview)")
 st.write(f"**2D Triangular Max Element Area:** {max_area}")
 st.write(f"**3D Max Element Volume:** {max_vol}")
 
 # ====================== GENERATE UPDATED SCRIPT ======================
+# (Your original script content – unchanged except for the value replacements)
 original_script = """#!/usr/bin/env python
 ###
 ### This file is generated automatically by SALOME v9.9.0 with dump python functionality
@@ -180,7 +289,6 @@ if salome.sg.hasDesktop():
   salome.sg.updateObjBrowser()
 """
 
-# Apply user values (exact string replacement – safe because numbers are unique)
 updated_script = original_script.replace(
     "MakeVertex(200, 50, 2)", f"MakeVertex({v2x}, {v2y}, {v2z})"
 ).replace(
@@ -193,7 +301,6 @@ updated_script = original_script.replace(
     "MaxElementVolume(1181.7)", f"MaxElementVolume({max_vol})"
 )
 
-# ====================== DOWNLOAD ======================
 st.download_button(
     label="⬇️ Download Updated SALOME .py Script",
     data=updated_script,
@@ -202,4 +309,4 @@ st.download_button(
 )
 
 st.success("✅ Script is ready! Load it in SALOME (File → Load Script) to see the exact geometry + mesh with your new dimensions.")
-st.info("The 3D preview above is a live wireframe approximation. The real interactive 3D view + full mesh is generated inside SALOME.")
+st.info("The 3D preview above shows a live wireframe with a mesh grid approximated using the 'Local Length' parameter. The real mesh is generated inside SALOME.")
