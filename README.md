@@ -6,6 +6,9 @@
 
 [![meaningtowords](https://img.shields.io/badge/geostructmesh2-streamlit-red)](https://generic-materials-geometry-mesh2.streamlit.app/)
 
+python script that can be loaded in Salome software
+[![meaningtowords](https://img.shields.io/badge/geomeshscript1-streamlit-red)](https://materialsjoint-geometrymesh-dimensions1.streamlit.app/)
+
 
 # Thermodynamics
 
