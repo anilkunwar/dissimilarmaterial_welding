@@ -4,27 +4,32 @@ import pyvista as pv
 import numpy as np
 import tempfile
 import os
+import meshio
 
 st.set_page_config(page_title="SALOME‑like Mesh Generator", layout="wide")
-st.title("Parametric CAD & Meshing with gmsh + pyvista")
-st.markdown("This app replicates the SALOME example: two stacked boxes partitioned by a plane.")
+st.title("Parametric CAD & Meshing (SALOME Replacement)")
+st.markdown("This app builds a two‑layer block, splits it by a horizontal plane, and generates a 3D tetrahedral mesh with physical groups – exactly like the SALOME example.")
 
-# Sidebar – input parameters (defaults from the original script)
+# ------------------------------------------------------------------------------
+# Sidebar controls
+# ------------------------------------------------------------------------------
 with st.sidebar:
     st.header("Geometry")
-    Lx = st.number_input("Length (X)", value=200.0)
-    Ly = st.number_input("Height (Y)", value=100.0)
-    Lz = st.number_input("Thickness (Z)", value=2.0)
-    split_y = st.number_input("Split plane Y", value=50.0)
+    Lx = st.number_input("Length (X)", value=200.0, step=10.0)
+    Ly = st.number_input("Height (Y)", value=100.0, step=10.0)
+    Lz = st.number_input("Thickness (Z)", value=2.0, step=1.0)
+    split_y = st.number_input("Split plane Y", value=50.0, step=5.0)
 
     st.header("Mesh sizes")
-    char_len = st.number_input("Local length (1D)", value=2.3616, format="%.4f")
-    max_area = st.number_input("Max triangle area (2D)", value=50.04)
-    max_vol  = st.number_input("Max tetra volume (3D)", value=1181.7)
+    char_len = st.number_input("Local length (1D)", value=2.3616, format="%.4f", step=0.1)
+    max_area = st.number_input("Max triangle area (2D)", value=50.04, step=10.0)
+    max_vol  = st.number_input("Max tetra volume (3D)", value=1181.7, step=100.0)
 
-    run = st.button("Generate mesh")
+    run = st.button("Generate mesh", type="primary")
 
-# Main area
+# ------------------------------------------------------------------------------
+# Main generation
+# ------------------------------------------------------------------------------
 if run:
     with st.spinner("Building geometry and mesh..."):
         # Initialize gmsh
@@ -37,166 +42,143 @@ if run:
         # Create a plane at y = split_y (infinite, but fragment will trim it)
         plane_tag = gmsh.model.occ.addPlane(0, split_y, 0, 0, 1, 0)
 
-        # Fragment: split the box by the plane
+        # Synchronise and fragment: split the box by the plane
         gmsh.model.occ.synchronize()
         fragments = gmsh.model.occ.fragment([(3, box_tag)], [(2, plane_tag)])
         gmsh.model.occ.synchronize()
 
-        # Extract resulting volumes (should be 2) and all surfaces
+        # --- Identify volumes ---
         volumes = [e for e in gmsh.model.getEntities(3)]
-        surfaces = [e for e in gmsh.model.getEntities(2)]
-
-        # ---- Identify volumes and faces by their bounding box ----
-        # Volumes: "front" (y < split_y) and "back" (y > split_y)
-        vol_front = None
-        vol_back  = None
+        vol_lower = None   # y < split_y
+        vol_upper = None   # y > split_y
         for v in volumes:
             com = gmsh.model.occ.getCenterOfMass(v[0], v[1])
-            if com[1] < split_y:
-                vol_front = v
+            if com[1] < split_y - 1e-6:
+                vol_lower = v
             else:
-                vol_back = v
+                vol_upper = v
 
         # Physical groups for volumes
-        if vol_front:
-            gmsh.model.addPhysicalGroup(vol_front[0], [vol_front[1]], name="Solid_1front")
-        if vol_back:
-            gmsh.model.addPhysicalGroup(vol_back[0], [vol_back[1]], name="Solid_2back")
+        if vol_lower:
+            gmsh.model.addPhysicalGroup(vol_lower[0], [vol_lower[1]], name="Solid_1front")
+        if vol_upper:
+            gmsh.model.addPhysicalGroup(vol_upper[0], [vol_upper[1]], name="Solid_2back")
 
-        # For each surface, determine its type and assign a physical group
-        # We'll use a dictionary to map expected face names to a condition function
-        # Coordinates are in [0,Lx] x [0,Ly] x [0,Lz]
-        def assign_face(surf_tag, center):
-            # center: (x,y,z)
-            x, y, z = center
-            eps = 1e-6
+        # --- Identify faces and assign physical groups ---
+        surfaces = [e for e in gmsh.model.getEntities(2)]
 
-            # Identify by location
-            if abs(x - 0) < eps:           # left side
-                if y < split_y - eps:
+        for surf in surfaces:
+            # Get bounding box and centroid
+            min_pt, max_pt = gmsh.model.getBoundingBox(surf[0], surf[1])
+            center = [(min_pt[i] + max_pt[i]) / 2 for i in range(3)]
+            xc, yc, zc = center
+
+            # Determine the type of face
+            eps = 1e-4
+            if abs(yc - split_y) < eps and (max_pt[1] - min_pt[1]) < eps:
+                # Interface plane
+                name = "Face_6interfacefront"
+            elif abs(xc - 0) < eps:        # left side
+                if yc < split_y:
                     name = "Face_1leftfront"
                 else:
                     name = "Face_2leftback"
-            elif abs(x - Lx) < eps:         # right side
-                if y < split_y - eps:
+            elif abs(xc - Lx) < eps:       # right side
+                if yc < split_y:
                     name = "Face_10rightfront"
                 else:
                     name = "Face_11rightback"
-            elif abs(y - 0) < eps:          # bottom (z=0)
-                if x < Lx/2:                # just for distinction, but bottom is split by interface? Actually bottom is continuous across y split, but we split at y=50 so bottom is two faces. We'll use y condition.
-                    if x < split_y:
-                        name = "Face_4bottomfront"
-                    else:
-                        name = "Face_7bottomback"
+            elif abs(yc - 0) < eps:        # front (y=0)
+                name = "Face_3frontfront"
+            elif abs(yc - Ly) < eps:       # back (y=Ly)
+                name = "Face_9backback"
+            elif abs(zc - 0) < eps:        # bottom
+                if yc < split_y:
+                    name = "Face_4bottomfront"
                 else:
-                    # Actually bottom is one continuous surface after split? The plane only splits the volume, not the bottom face. So bottom face is a single surface but we need two groups. This is a simplification: we'll split the bottom face artificially by y.
-                    # Better: bottom face is one surface, but we need two groups. We'll check if the surface is entirely on one side of split_y.
-                    # We'll approximate by the center y.
-                    if y < split_y:
-                        name = "Face_4bottomfront"
-                    else:
-                        name = "Face_7bottomback"
-            elif abs(y - Ly) < eps:         # top (z=2)
-                if y < split_y:
+                    name = "Face_7bottomback"
+            elif abs(zc - Lz) < eps:       # top
+                if yc < split_y:
                     name = "Face_5topfront"
                 else:
                     name = "Face_8topback"
-            elif abs(z - 0) < eps:          # front (y=0)
-                if x < split_y:
-                    name = "Face_3frontfront"
-                else:
-                    name = "Face_9backback"   # Actually original had "backback" for y=100? Wait, we already have backback at y=100. Let's adjust.
-            elif abs(z - Lz) < eps:         # back (y=100)
-                if y < split_y:
-                    name = "Face_???", but original had "Face_9backback" for y=100? Need mapping.
             else:
                 name = None
 
             if name:
-                gmsh.model.addPhysicalGroup(2, [surf_tag], name=name)
+                gmsh.model.addPhysicalGroup(2, [surf[1]], name=name)
 
-        # We need to iterate over surfaces and get their center of mass
-        # But the plane created a new internal surface (the interface). We'll handle that separately.
-        for surf in surfaces:
-            # Get bounding box of surface
-            min_pt, max_pt = gmsh.model.getBoundingBox(surf[0], surf[1])
-            center = [(min_pt[i] + max_pt[i]) / 2 for i in range(3)]
-            # Check if this surface is the interface (plane at y=split_y)
-            if abs(center[1] - split_y) < 1e-4 and abs(min_pt[1] - max_pt[1]) < 1e-4:
-                # Interface surface
-                gmsh.model.addPhysicalGroup(2, [surf[1]], name="Face_6interfacefront")
-            else:
-                # External surface – determine which face
-                assign_face(surf[1], center)
-
-        # ---- Set mesh size constraints ----
-        # Global size (1D)
+        # --- Set mesh size constraints (matching SALOME parameters) ---
         gmsh.option.setNumber("Mesh.CharacteristicLengthMax", char_len)
-        # Max triangle area (2D)
         gmsh.option.setNumber("Mesh.MaxElementArea", max_area)
-        # Max tetra volume (3D)
         gmsh.option.setNumber("Mesh.MaxElementVolume", max_vol)
 
         # Generate 3D mesh
         gmsh.model.mesh.generate(3)
 
-        # ---- Export mesh to a temporary file (VTK for pyvista) ----
-        with tempfile.NamedTemporaryFile(suffix=".vtk", delete=False) as f:
-            tmpfile = f.name
-        gmsh.write(tmpfile)
+        # --- Export to UNV (primary format) and VTK (for visualisation) ---
+        with tempfile.NamedTemporaryFile(suffix=".unv", delete=False) as f_unv:
+            unv_file = f_unv.name
+        with tempfile.NamedTemporaryFile(suffix=".vtk", delete=False) as f_vtk:
+            vtk_file = f_vtk.name
+
+        gmsh.write(unv_file)
+        gmsh.write(vtk_file)
 
         # Clean up gmsh
         gmsh.finalize()
 
-        # ---- Load mesh with pyvista ----
-        mesh = pv.read(tmpfile)
-        os.unlink(tmpfile)  # delete temporary file
+        # Load VTK mesh for pyvista display
+        mesh = pv.read(vtk_file)
 
-    # ---- Display in Streamlit ----
+    # --------------------------------------------------------------------------
+    # Display results
+    # --------------------------------------------------------------------------
     st.subheader("Generated Mesh")
     st.write(f"Number of cells: {mesh.n_cells}, points: {mesh.n_points}")
 
-    # Extract cell arrays for physical groups
-    # PyVista loads groups as cell arrays "gmsh:physical" but we can also show them
-    # For simplicity, we just plot the mesh with a smooth shading
-    plotter = pv.Plotter(off_screen=True)
+    # Show mesh with pyvista (interactive if stpyvista is installed)
+    plotter = pv.Plotter(off_screen=False)
     plotter.add_mesh(mesh, color="lightblue", show_edges=True, opacity=0.8)
     plotter.view_xy()
     plotter.camera.zoom(1.2)
 
-    # Use stpyvista if available, else fallback to static image
     try:
         from stpyvista import stpyvista
         stpyvista(plotter, key="mesh_viewer")
     except ImportError:
-        # Save screenshot and show
-        with tempfile.NamedTemporaryFile(suffix=".png") as img:
+        # Fallback: static image
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as img:
             plotter.screenshot(img.name)
             st.image(img.name, caption="Mesh view (static)")
+            os.unlink(img.name)
 
-    # ---- Download buttons ----
+    # --------------------------------------------------------------------------
+    # Download buttons
+    # --------------------------------------------------------------------------
     st.subheader("Export mesh")
-    with tempfile.NamedTemporaryFile(suffix=".vtk", delete=False) as f:
-        vtk_file = f.name
-    mesh.save(vtk_file)
+
+    # UNV
+    with open(unv_file, "rb") as f:
+        st.download_button("Download as .unv", f, file_name="mesh.unv")
+    os.unlink(unv_file)
+
+    # VTK
     with open(vtk_file, "rb") as f:
-        st.download_button("Download as VTK", f, file_name="mesh.vtk")
+        st.download_button("Download as .vtk", f, file_name="mesh.vtk")
     os.unlink(vtk_file)
 
-    # Also export to .msh (Gmsh format) using meshio
-    import meshio
-    with tempfile.NamedTemporaryFile(suffix=".msh", delete=False) as f:
-        msh_file = f.name
-    # Convert pyvista mesh to meshio and write
-    meshio_mesh = meshio.Mesh(
-        points=mesh.points,
-        cells={"tetra": mesh.cells_dict.get("tetra", [])},
-        cell_data={"gmsh:physical": mesh.cell_data.get("gmsh:physical", [])}
-    )
+    # Also export as Gmsh .msh format (optional)
+    with tempfile.NamedTemporaryFile(suffix=".msh", delete=False) as f_msh:
+        msh_file = f_msh.name
+    # Use meshio to convert pyvista mesh to .msh
+    cells = {"tetra": mesh.cells_dict.get("tetra", [])}
+    meshio_mesh = meshio.Mesh(points=mesh.points, cells=cells,
+                              cell_data={"gmsh:physical": mesh.cell_data.get("gmsh:physical", [])})
     meshio.write(msh_file, meshio_mesh, file_format="gmsh")
     with open(msh_file, "rb") as f:
         st.download_button("Download as .msh", f, file_name="mesh.msh")
     os.unlink(msh_file)
 
 else:
-    st.info("Adjust parameters on the left and click **Generate mesh**.")
+    st.info("Adjust the parameters on the left and click **Generate mesh**.")
