@@ -6,3 +6,4 @@ plotly
 meshpy
 gmsh
 scipy
+pyvista
