@@ -10,9 +10,9 @@ st.markdown("Change any coordinate or mesh value below → see live preview + do
 st.sidebar.header("Geometry Parameters")
 st.sidebar.markdown("**Vertex 1** is fixed at (0, 0, 0)")
 
-v2x = st.sidebar.number_input("Vertex 2 - X (Length of main plate)", value=200.0, step=0.01, format="%.4f")
-v2y = st.sidebar.number_input("Vertex 2 - Y (Width of main plate)", value=50.0, step=0.01, format="%.4f")
-v2z = st.sidebar.number_input("Vertex 2 - Z (Height / Thickness)", value=2.0, step=0.01, format="%.4f")
+v2x = st.sidebar.number_input("Vertex 2 - X (Length of main plate)", value=400.0, step=0.01, format="%.4f")
+v2y = st.sidebar.number_input("Vertex 2 - Y (Width of main plate)", value=100.0, step=0.01, format="%.4f")
+v2z = st.sidebar.number_input("Vertex 2 - Z (Height / Thickness)", value=20.0, step=0.01, format="%.4f")
 
 v3x = st.sidebar.number_input("Vertex 3 - X", value=0.0, step=0.01, format="%.4f")
 v3y = st.sidebar.number_input("Vertex 3 - Y", value=100.0, step=0.01, format="%.4f")
