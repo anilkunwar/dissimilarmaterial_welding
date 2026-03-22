@@ -15,7 +15,7 @@ v2y = st.sidebar.number_input("Vertex 2 - Y (Width of main plate)", value=100.0,
 v2z = st.sidebar.number_input("Vertex 2 - Z (Height / Thickness)", value=20.0, step=0.01, format="%.4f")
 
 v3x = st.sidebar.number_input("Vertex 3 - X", value=0.0, step=0.01, format="%.4f")
-v3y = st.sidebar.number_input("Vertex 3 - Y", value=100.0, step=0.01, format="%.4f")
+v3y = st.sidebar.number_input("Vertex 3 - Y", value=200.0, step=0.01, format="%.4f")
 v3z = st.sidebar.number_input("Vertex 3 - Z", value=0.0, step=0.01, format="%.4f")
 
 st.sidebar.header("Mesh Parameters (quantitative)")
