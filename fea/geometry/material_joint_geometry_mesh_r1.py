@@ -4,7 +4,7 @@ import pyvista as pv
 import numpy as np
 import tempfile
 import os
-os.environ["GMSH_NO_OPENGL"] = "1"
+#os.environ["GMSH_NO_OPENGL"] = "1"
 import meshio
 
 st.set_page_config(page_title="SALOME‑like Mesh Generator", layout="wide")
