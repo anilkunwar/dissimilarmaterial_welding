@@ -38,7 +38,7 @@ Computation of Molar and Specific Enthalpy of Multimaterial Systems
 1. Al-Cu Dissimilar Welding
 2. Ni-YSZ Dissimilar Welding
 
-# Numerically Attentive Interpolation Framework
+# Numerically Attentive Interpolation Framework (NAIF)
 Cross-attention mechanism, Gated attention framework for spatial and field proximity analysis
 
 # MultiMaterialWeldGPT
