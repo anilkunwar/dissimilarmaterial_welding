@@ -16,6 +16,8 @@ python script that can be loaded in Salome software
 
 [![meaningtowords](https://img.shields.io/badge/geomeshscript2-streamlit-red)](https://materialsjoint-geometrymesh-dimensions2.streamlit.app/) 
 
+[![meaningtowords](https://img.shields.io/badge/geomeshscript3-streamlit-red)](https://materialsjoint-geometrymesh-dimensions3.streamlit.app/)   (similar to r2 but outputs dimensions in the filename)
+
 
 # Thermodynamics
 
