@@ -33,3 +33,8 @@ Computation of Molar and Specific Enthalpy of Multimaterial Systems
 
 [![meaningtowords](https://img.shields.io/badge/hcompute6-streamlit-red)](https://enthalpy-computation6.streamlit.app/) (advanced features for multimaterial design, proper visualization)
 
+
+# Numerical Models
+1. Al-Cu Dissimilar Welding
+2. Ni-YSZ Dissimilar Welding
+
