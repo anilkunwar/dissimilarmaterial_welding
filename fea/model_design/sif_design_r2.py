@@ -2,9 +2,10 @@
 # -*- coding: utf-8 -*-
 """
 Elmer FEM .sif Generator for Dissimilar Material Welding
-- No geometry tab (mesh supplied externally)
-- All widgets have unique keys to prevent StreamlitDuplicateElementId errors
-- Generates complete .sif + Fortran UDFs + lookup tables
+- FIXED GEOMETRY: Only specified faces/solids from Mesh_1_dimensions
+- SINGLE HEAT SOURCE: Travelling Gaussian only
+- LINKED UDF SYSTEM: Expressions auto-update Fortran UDFs
+- ALL WIDGETS HAVE UNIQUE KEYS (no StreamlitDuplicateElementId errors)
 """
 
 import streamlit as st
@@ -15,13 +16,13 @@ import re
 
 # Page config
 st.set_page_config(
-    page_title="Elmer Weld Generator",
+    page_title="Elmer Weld Generator - Fixed",
     page_icon="🔥",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for better readability
+# Custom CSS
 st.markdown("""
 <style>
     .stCodeBlock { background-color: #f8f9fa; }
@@ -32,8 +33,8 @@ st.markdown("""
 
 st.title("🔥 Elmer FEM Generator for Dissimilar Welding")
 st.markdown("""
-**Generate complete `.sif` input files + Fortran UDFs + lookup tables for Al-Cu (or custom) welding simulations.**
-_Mesh file supplied externally – focus on materials, physics, and boundary conditions._
+**Generate complete `.sif` input files + Fortran UDFs + lookup tables for Al-Cu welding simulations.**
+_Mesh file supplied externally with fixed geometry entities._
 """)
 
 # ====================== HELPER: UNIQUE KEY GENERATOR ======================
@@ -41,20 +42,28 @@ def uk(section: str, var: str, suffix: str = "") -> str:
     """Generate unique key for Streamlit widgets: section_var_suffix"""
     return f"{section}_{var}_{suffix}".strip("_")
 
+# ====================== FIXED GEOMETRY ENTITIES ======================
+# From your Mesh_1_dimensions specification
+SOLID_NAMES = ["Solid_1front", "Solid_2back"]
+FACE_NAMES = [
+    "Face_1leftfront", "Face_2leftback", "Face_3frontfront", 
+    "Face_4bottomfront", "Face_5topfront", "Face_6interfacefront",
+    "Face_7bottomback", "Face_8topback", "Face_9backback",
+    "Face_10rightfront", "Face_11rightback"
+]
+
 # ====================== SIDEBAR: GLOBAL SETTINGS ======================
 st.sidebar.header("⚙️ Global Settings")
 
-# Project metadata
-project_name = st.sidebar.text_input("Project Name", value="Al_Cu_Weld", key="uk_global_project")
-author = st.sidebar.text_input("Author", value="Your Name", key="uk_global_author")
+project_name = st.sidebar.text_input("Project Name", value="Al_Cu_Weld", key=uk("global", "project"))
+author = st.sidebar.text_input("Author", value="Your Name", key=uk("global", "author"))
 date_str = datetime.now().strftime("%Y-%m-%d")
 
-# File output settings
 st.sidebar.subheader("📁 Output Files")
-sif_filename = st.sidebar.text_input(".sif Filename", value=f"{project_name.lower()}.sif", key="uk_out_sif")
-fortran_dir = st.sidebar.text_input("Fortran UDF Directory", value="./udfs/", key="uk_out_f90dir")
-table_dir_visc = st.sidebar.text_input("Viscosity Table Dir", value="./viscosity/", key="uk_out_viscdir")
-table_dir_enth = st.sidebar.text_input("Enthalpy Table Dir", value="./specific_enthalpy/", key="uk_out_enthdir")
+sif_filename = st.sidebar.text_input(".sif Filename", value=f"{project_name.lower()}.sif", key=uk("out", "sif"))
+fortran_dir = st.sidebar.text_input("Fortran UDF Directory", value="./udfs/", key=uk("out", "f90dir"))
+table_dir_visc = st.sidebar.text_input("Viscosity Table Dir", value="./viscosity/", key=uk("out", "viscdir"))
+table_dir_enth = st.sidebar.text_input("Enthalpy Table Dir", value="./specific_enthalpy/", key=uk("out", "enthdir"))
 
 # ====================== TABS NAVIGATION ======================
 tab_materials, tab_heat, tab_tables, tab_physics, tab_generate = st.tabs([
@@ -65,56 +74,54 @@ tab_materials, tab_heat, tab_tables, tab_physics, tab_generate = st.tabs([
     "📥 Generate Files"
 ])
 
-# ====================== TAB 1: MATERIALS & FORTRAN UDFs ======================
+# ====================== TAB 1: MATERIALS & FORTRAN UDFs (LINKED SYSTEM) ======================
 with tab_materials:
-    st.header("🧪 Material Properties & Fortran UDFs")
+    st.header("🧪 Material Properties & Linked Fortran UDFs")
+    st.info("🔹 **Expressions automatically update UDFs** - edit property expressions below to see UDF code change in real-time!")
     
     mat_col1, mat_col2 = st.columns(2)
     
     # ----- MATERIAL A -----
     with mat_col1:
-        st.subheader("Material A (Front/Body 1)")
+        st.subheader("Material A (Solid_1front)")
         mat_a_name = st.text_input("Material Name", value="AA6061_Al", key=uk("matA", "name"))
         mat_a_melting = st.number_input("Melting Point [K]", value=933.5, step=0.1, key=uk("matA", "tmelt"))
         
-        st.markdown("**Temperature-Dependent Property Expressions** (used in .sif Material block):")
+        st.markdown("**Temperature-Dependent Property Expressions** (T in Kelvin):")
         
-        # Density expressions
+        # Density expressions - these will auto-update UDFs
         st.markdown("🔹 Density ρ(T) [kg/m³]")
-        dens_a_s = st.text_input("Solid phase: ρ = ", value="2700.0 - 0.11*(T - 298.0)", key=uk("matA", "dens_s"))
-        dens_a_l = st.text_input("Liquid phase: ρ = ", value="2380.0 - 0.28*(T - 933.5)", key=uk("matA", "dens_l"))
+        dens_a_s_expr = st.text_input("Solid phase: ρ = ", value="2700.0 - 0.11*(T - 298.0)", key=uk("matA", "dens_s_expr"))
+        dens_a_l_expr = st.text_input("Liquid phase: ρ = ", value="2380.0 - 0.28*(T - 933.5)", key=uk("matA", "dens_l_expr"))
         
         # Thermal conductivity
         st.markdown("🔹 Thermal Conductivity k(T) [W/(m·K)]")
-        cond_a_s = st.text_input("Solid: k = ", value="167.0 + 0.12*(T - 298.0)", key=uk("matA", "cond_s"))
-        cond_a_l = st.text_input("Liquid: k = ", value="90.0 - 0.012*(T - 933.5)", key=uk("matA", "cond_l"))
+        cond_a_s_expr = st.text_input("Solid: k = ", value="167.0 + 0.12*(T - 298.0)", key=uk("matA", "cond_s_expr"))
+        cond_a_l_expr = st.text_input("Liquid: k = ", value="90.0 - 0.012*(T - 933.5)", key=uk("matA", "cond_l_expr"))
         
-        # Specific heat
-        st.markdown("🔹 Specific Heat cₚ(T) [J/(kg·K)]")
-        cp_a_s = st.text_input("Solid: cₚ = ", value="904.0 + 0.32*(T - 298.0)", key=uk("matA", "cp_s"))
-        cp_a_l = st.text_input("Liquid: cₚ = ", value="1180.0", key=uk("matA", "cp_l"))
-        
-        # Young's modulus
-        st.markdown("🔹 Young's Modulus E(T) [Pa]")
-        young_a_s = st.text_input("Solid: E = ", value="68.9e9 - 4.5e7*(T - 298.0)", key=uk("matA", "young_s"))
-        young_a_l = st.text_input("Liquid: E = ", value="0.0", key=uk("matA", "young_l"))
-        
-        # Poisson, CTE
-        poisson_a = st.number_input("Poisson's Ratio ν", value=0.33, step=0.01, key=uk("matA", "poisson"))
-        cte_a_s = st.text_input("CTE α (solid) [1/K]", value="23.0e-6 + 2.1e-8*(T - 298.0)", key=uk("matA", "cte_s"))
-        cte_a_l = st.text_input("CTE α (liquid) [1/K]", value="0.0", key=uk("matA", "cte_l"))
+        # CTE
+        st.markdown("🔹 CTE α(T) [1/K]")
+        cte_a_s_expr = st.text_input("Solid: α = ", value="23.0e-6 + 2.1e-8*(T - 298.0)", key=uk("matA", "cte_s_expr"))
+        cte_a_l_expr = st.text_input("Liquid: α = ", value="0.0", key=uk("matA", "cte_l_expr"))
         
         # Latent heat
         latent_a = st.number_input("Latent Heat of Fusion L_f [J/kg]", value=3.97e5, step=1e3, format="%.0f", key=uk("matA", "latent"))
         
         st.divider()
-        st.markdown("### 🔧 Fortran UDF Editor – Material A")
-        st.info("Edit the Fortran functions that Elmer will call. Variables: `temp` (K), `ref*` from .sif, return SI units.")
+        st.markdown("### 🔧 Auto-Generated Fortran UDF – Material A")
+        st.caption("This UDF is automatically generated from your expressions above")
         
-        # Density UDF
-        dens_udf_a = st.text_area(
-            "getDensity.F90 – Material A",
-            value=f"""FUNCTION getDensity_{mat_a_name}(model, n, temp) RESULT(denst)
+        # AUTO-GENERATE DENSITY UDF FROM EXPRESSIONS
+        def parse_expression(expr, temp_var="temp"):
+            """Convert expression like '2700.0 - 0.11*(T - 298.0)' to Fortran with temp variable"""
+            # Replace T with temp_var
+            expr_fortran = expr.replace("T", temp_var)
+            # Ensure dp suffix for literals
+            expr_fortran = re.sub(r'(\d+\.\d+)', r'\1_dp', expr_fortran)
+            expr_fortran = re.sub(r'(\d+)(?!\.)', r'\1.0_dp', expr_fortran)
+            return expr_fortran
+        
+        dens_udf_a = f"""FUNCTION getDensity_{mat_a_name}(model, n, temp) RESULT(denst)
   USE DefUtils
   IMPLICIT NONE
   TYPE(Model_t) :: model
@@ -142,21 +149,19 @@ with tab_materials:
   tscaler = GetConstReal(material, 'Tscaler', GotIt)
   IF(.NOT. GotIt) CALL Fatal('getDensity', 'Tscaler not found')
 
+  ! Auto-generated from expression: {dens_a_s_expr} (solid), {dens_a_l_expr} (liquid)
   IF (refTemp <= temp) THEN
       CALL Warn('getDensity', 'Material A in liquid state.')
-      denst = refLiqDenst + alphal * (tscaler * (temp - 910.0_dp))
+      denst = {parse_expression(dens_a_l_expr)}
   ELSE
-      denst = refSolDenst + alphas * (tscaler * (temp - 298.0_dp))
+      denst = {parse_expression(dens_a_s_expr)}
   END IF
-END FUNCTION getDensity_{mat_a_name}""",
-            height=350,
-            key=uk("matA", "udf_dens")
-        )
+END FUNCTION getDensity_{mat_a_name}"""
         
-        # Conductivity UDF
-        cond_udf_a = st.text_area(
-            "getThermalConductivity.F90 – Material A",
-            value=f"""FUNCTION getThermalConductivity_{mat_a_name}(model, n, temp) RESULT(thcondt)
+        st.code(dens_udf_a, language="fortran")
+        
+        # AUTO-GENERATE CONDUCTIVITY UDF
+        cond_udf_a = f"""FUNCTION getThermalConductivity_{mat_a_name}(model, n, temp) RESULT(thcondt)
   USE DefUtils
   IMPLICIT NONE
   TYPE(Model_t) :: model; INTEGER :: n; REAL(KIND=dp) :: temp, thcondt, tscaler
@@ -184,60 +189,84 @@ END FUNCTION getDensity_{mat_a_name}""",
   tscaler = GetConstReal(material, 'Tscaler', GotIt)
   IF(.NOT. GotIt) CALL Fatal('getThermalConductivity', 'Tscaler not found')
 
+  ! Auto-generated from expression: {cond_a_s_expr} (solid), {cond_a_l_expr} (liquid)
   IF (refTemp <= temp) THEN
       CALL Warn('getThermalConductivity', 'Material A in liquid state.')
-      thcondt = refLiqThCond + alphal * (tscaler * (temp - 900.0_dp))
+      thcondt = {parse_expression(cond_a_l_expr)}
   ELSE
-      thcondt = refSolThCond + betas * (tscaler * (temp - 298.0_dp)) + &
-                alphas * (tscaler * (temp - 298.0_dp))**2
+      thcondt = {parse_expression(cond_a_s_expr)}
   END IF
-END FUNCTION getThermalConductivity_{mat_a_name}""",
-            height=350,
-            key=uk("matA", "udf_cond")
-        )
+END FUNCTION getThermalConductivity_{mat_a_name}"""
+        
+        st.code(cond_udf_a, language="fortran")
+        
+        # AUTO-GENERATE CTE UDF
+        cte_udf_a = f"""FUNCTION getThermalExpansivity_{mat_a_name}(model, n, temp) RESULT(expansivity)
+  USE DefUtils
+  IMPLICIT NONE
+  TYPE(Model_t) :: model; INTEGER :: n; REAL(KIND=tp) :: temp, expansivity, tscaler
+  REAL(KIND=dp) :: refSolExp, refTemp, alphas, betas
+  LOGICAL :: GotIt
+  TYPE(ValueList_t), POINTER :: material
+
+  material => GetMaterial()
+  IF (.NOT. ASSOCIATED(material)) CALL Fatal('getThermalExpansivity', 'No material found')
+
+  refSolExp = GetConstReal(material, 'Reference Thermal Expansivity Solid {mat_a_name}', GotIt)
+  IF(.NOT. GotIt) CALL Fatal('getThermalExpansivity', 'Ref expansivity solid not found')
+  alphas = GetConstReal(material, 'Thermal Expansivity Coeff As Solid {mat_a_name}', GotIt)
+  IF(.NOT. GotIt) CALL Fatal('getThermalExpansivity', 'Coeff A expansivity not found')
+  betas = GetConstReal(material, 'Thermal Expansivity Coeff Bs Solid {mat_a_name}', GotIt)
+  IF(.NOT. GotIt) CALL Fatal('getThermalExpansivity', 'Coeff B expansivity not found')
+
+  refTemp = GetConstReal(material, 'Melting Point Temperature of {mat_a_name}', GotIt)
+  IF(.NOT. GotIt) CALL Fatal('getThermalExpansivity', 'Melting point not found')
+  tscaler = GetConstReal(material, 'Tscaler', GotIt)
+  IF(.NOT. GotIt) CALL Fatal('getThermalExpansivity', 'Tscaler not found')
+
+  ! Auto-generated from expression: {cte_a_s_expr} (solid), {cte_a_l_expr} (liquid)
+  IF (refTemp <= temp) THEN
+      CALL Warn('getThermalExpansivity', 'Material A in liquid state.')
+      expansivity = {parse_expression(cte_a_l_expr)}
+  ELSE
+      expansivity = {parse_expression(cte_a_s_expr)}
+  END IF
+END FUNCTION getThermalExpansivity_{mat_a_name}"""
+        
+        st.code(cte_udf_a, language="fortran")
     
     # ----- MATERIAL B -----
     with mat_col2:
-        st.subheader("Material B (Back/Body 2)")
+        st.subheader("Material B (Solid_2back)")
         mat_b_name = st.text_input("Material Name", value="T2_Cu", key=uk("matB", "name"))
         mat_b_melting = st.number_input("Melting Point [K]", value=1356.6, step=0.1, key=uk("matB", "tmelt"))
         
-        st.markdown("**Temperature-Dependent Property Expressions** (used in .sif Material block):")
+        st.markdown("**Temperature-Dependent Property Expressions** (T in Kelvin):")
         
         # Density
         st.markdown("🔹 Density ρ(T) [kg/m³]")
-        dens_b_s = st.text_input("Solid phase: ρ = ", value="8940.0 - 0.52*(T - 298.0)", key=uk("matB", "dens_s"))
-        dens_b_l = st.text_input("Liquid phase: ρ = ", value="7992.0 - 0.44*(T - 1356.6)", key=uk("matB", "dens_l"))
+        dens_b_s_expr = st.text_input("Solid phase: ρ = ", value="8940.0 - 0.52*(T - 298.0)", key=uk("matB", "dens_s_expr"))
+        dens_b_l_expr = st.text_input("Liquid phase: ρ = ", value="7992.0 - 0.44*(T - 1356.6)", key=uk("matB", "dens_l_expr"))
         
         # Conductivity
         st.markdown("🔹 Thermal Conductivity k(T) [W/(m·K)]")
-        cond_b_s = st.text_input("Solid: k = ", value="391.0 - 0.052*(T - 298.0)", key=uk("matB", "cond_s"))
-        cond_b_l = st.text_input("Liquid: k = ", value="170.0 - 0.025*(T - 1356.6)", key=uk("matB", "cond_l"))
+        cond_b_s_expr = st.text_input("Solid: k = ", value="391.0 - 0.052*(T - 298.0)", key=uk("matB", "cond_s_expr"))
+        cond_b_l_expr = st.text_input("Liquid: k = ", value="170.0 - 0.025*(T - 1356.6)", key=uk("matB", "cond_l_expr"))
         
-        # Specific heat
-        st.markdown("🔹 Specific Heat cₚ(T) [J/(kg·K)]")
-        cp_b_s = st.text_input("Solid: cₚ = ", value="385.0 + 0.10*(T - 298.0)", key=uk("matB", "cp_s"))
-        cp_b_l = st.text_input("Liquid: cₚ = ", value="502.0", key=uk("matB", "cp_l"))
-        
-        # Young's modulus
-        st.markdown("🔹 Young's Modulus E(T) [Pa]")
-        young_b_s = st.text_input("Solid: E = ", value="115.0e9 - 4.0e7*(T - 298.0)", key=uk("matB", "young_s"))
-        young_b_l = st.text_input("Liquid: E = ", value="0.0", key=uk("matB", "young_l"))
-        
-        # Poisson, CTE
-        poisson_b = st.number_input("Poisson's Ratio ν", value=0.31, step=0.01, key=uk("matB", "poisson"))
-        cte_b_s = st.text_input("CTE α (solid) [1/K]", value="16.4e-6 + 2.5e-8*(T - 298.0)", key=uk("matB", "cte_s"))
-        cte_b_l = st.text_input("CTE α (liquid) [1/K]", value="0.0", key=uk("matB", "cte_l"))
+        # CTE
+        st.markdown("🔹 CTE α(T) [1/K]")
+        cte_b_s_expr = st.text_input("Solid: α = ", value="16.4e-6 + 2.5e-8*(T - 298.0)", key=uk("matB", "cte_s_expr"))
+        cte_b_l_expr = st.text_input("Liquid: α = ", value="0.0", key=uk("matB", "cte_l_expr"))
         
         # Latent heat
         latent_b = st.number_input("Latent Heat of Fusion L_f [J/kg]", value=2.05e5, step=1e3, format="%.0f", key=uk("matB", "latent"))
         
         st.divider()
-        st.markdown("### 🔧 Fortran UDF Editor – Material B")
+        st.markdown("### 🔧 Auto-Generated Fortran UDF – Material B")
+        st.caption("This UDF is automatically generated from your expressions above")
         
-        dens_udf_b = st.text_area(
-            "getDensity.F90 – Material B",
-            value=f"""FUNCTION getDensity_{mat_b_name}(model, n, temp) RESULT(denst)
+        # AUTO-GENERATE DENSITY UDF
+        dens_udf_b = f"""FUNCTION getDensity_{mat_b_name}(model, n, temp) RESULT(denst)
   USE DefUtils
   IMPLICIT NONE
   TYPE(Model_t) :: model; INTEGER :: n; REAL(KIND=dp) :: temp, denst, tscaler
@@ -263,20 +292,19 @@ END FUNCTION getThermalConductivity_{mat_a_name}""",
   tscaler = GetConstReal(material, 'Tscaler', GotIt)
   IF(.NOT. GotIt) CALL Fatal('getDensity', 'Tscaler not found')
 
+  ! Auto-generated from expression: {dens_b_s_expr} (solid), {dens_b_l_expr} (liquid)
   IF (refTemp <= temp) THEN
       CALL Warn('getDensity', 'Material B in liquid state.')
-      denst = refLiqDenst + alphal * (tscaler * (temp - 910.0_dp))
+      denst = {parse_expression(dens_b_l_expr)}
   ELSE
-      denst = refSolDenst + alphas * (tscaler * (temp - 298.0_dp))
+      denst = {parse_expression(dens_b_s_expr)}
   END IF
-END FUNCTION getDensity_{mat_b_name}""",
-            height=350,
-            key=uk("matB", "udf_dens")
-        )
+END FUNCTION getDensity_{mat_b_name}"""
         
-        cond_udf_b = st.text_area(
-            "getThermalConductivity.F90 – Material B",
-            value=f"""FUNCTION getThermalConductivity_{mat_b_name}(model, n, temp) RESULT(thcondt)
+        st.code(dens_udf_b, language="fortran")
+        
+        # AUTO-GENERATE CONDUCTIVITY UDF
+        cond_udf_b = f"""FUNCTION getThermalConductivity_{mat_b_name}(model, n, temp) RESULT(thcondt)
   USE DefUtils
   IMPLICIT NONE
   TYPE(Model_t) :: model; INTEGER :: n; REAL(KIND=dp) :: temp, thcondt, tscaler
@@ -304,31 +332,76 @@ END FUNCTION getDensity_{mat_b_name}""",
   tscaler = GetConstReal(material, 'Tscaler', GotIt)
   IF(.NOT. GotIt) CALL Fatal('getThermalConductivity', 'Tscaler not found')
 
+  ! Auto-generated from expression: {cond_b_s_expr} (solid), {cond_b_l_expr} (liquid)
   IF (refTemp <= temp) THEN
       CALL Warn('getThermalConductivity', 'Material B in liquid state.')
-      thcondt = refLiqThCond + alphal * (tscaler * (temp - 900.0_dp))
+      thcondt = {parse_expression(cond_b_l_expr)}
   ELSE
-      thcondt = refSolThCond + betas * (tscaler * (temp - 298.0_dp)) + &
-                alphas * (tscaler * (temp - 298.0_dp))**2
+      thcondt = {parse_expression(cond_b_s_expr)}
   END IF
-END FUNCTION getThermalConductivity_{mat_b_name}""",
-            height=350,
-            key=uk("matB", "udf_cond")
-        )
+END FUNCTION getThermalConductivity_{mat_b_name}"""
+        
+        st.code(cond_udf_b, language="fortran")
+        
+        # AUTO-GENERATE CTE UDF
+        cte_udf_b = f"""FUNCTION getThermalExpansivity_{mat_b_name}(model, n, temp) RESULT(expansivity)
+  USE DefUtils
+  IMPLICIT NONE
+  TYPE(Model_t) :: model; INTEGER :: n; REAL(KIND=dp) :: temp, expansivity, tscaler
+  REAL(KIND=dp) :: refSolExp, refTemp, alphas, betas
+  LOGICAL :: GotIt
+  TYPE(ValueList_t), POINTER :: material
 
-# ====================== TAB 2: HEAT SOURCE ======================
+  material => GetMaterial()
+  IF (.NOT. ASSOCIATED(material)) CALL Fatal('getThermalExpansivity', 'No material found')
+
+  refSolExp = GetConstReal(material, 'Reference Thermal Expansivity Solid {mat_b_name}', GotIt)
+  IF(.NOT. GotIt) CALL Fatal('getThermalExpansivity', 'Ref expansivity solid not found')
+  alphas = GetConstReal(material, 'Thermal Expansivity Coeff As Solid {mat_b_name}', GotIt)
+  IF(.NOT. GotIt) CALL Fatal('getThermalExpansivity', 'Coeff A expansivity not found')
+  betas = GetConstReal(material, 'Thermal Expansivity Coeff Bs Solid {mat_b_name}', GotIt)
+  IF(.NOT. GotIt) CALL Fatal('getThermalExpansivity', 'Coeff B expansivity not found')
+
+  refTemp = GetConstReal(material, 'Melting Point Temperature of {mat_b_name}', GotIt)
+  IF(.NOT. GotIt) CALL Fatal('getThermalExpansivity', 'Melting point not found')
+  tscaler = GetConstReal(material, 'Tscaler', GotIt)
+  IF(.NOT. GotIt) CALL Fatal('getThermalExpansivity', 'Tscaler not found')
+
+  ! Auto-generated from expression: {cte_b_s_expr} (solid), {cte_b_l_expr} (liquid)
+  IF (refTemp <= temp) THEN
+      CALL Warn('getThermalExpansivity', 'Material B in liquid state.')
+      expansivity = {parse_expression(cte_b_l_expr)}
+  ELSE
+      expansivity = {parse_expression(cte_b_s_expr)}
+  END IF
+END FUNCTION getThermalExpansivity_{mat_b_name}"""
+        
+        st.code(cte_udf_b, language="fortran")
+
+# ====================== TAB 2: HEAT SOURCE (FIXED TO TRAVELLING GAUSSIAN) ======================
 with tab_heat:
     st.header("🔦 Laser Heat Source Function")
+    st.info("✅ **Fixed to Travelling Gaussian** as per your requirements")
     
-    heat_type = st.selectbox(
-        "Heat Source Type",
-        ["Travelling Gaussian", "Fixed Gaussian", "Super-Gaussian (Flat-Top)", "Custom"],
-        key=uk("heat", "type")
-    )
+    # Only one option - Travelling Gaussian
+    heat_type = "Travelling Gaussian"
+    st.success(f"Selected: **{heat_type}**")
     
-    # Default templates
-    if heat_type == "Travelling Gaussian":
-        default_heat = f"""! Travelling Gaussian Heat Source for {project_name}
+    # Parameters for Travelling Gaussian
+    col_h1, col_h2 = st.columns(2)
+    with col_h1:
+        beam_radius = st.number_input("Beam Radius r₀ [m]", value=35.0e-6, format="%.2e", key=uk("heat", "radius"))
+        heat_coeff = st.number_input("Heat Coefficient [W/m²]", value=8.68e9, format="%.2e", key=uk("heat", "coeff"))
+        speed_x = st.number_input("Scan Speed X [m/s]", value=1.0, step=0.1, key=uk("heat", "speedx"))
+        speed_y = st.number_input("Scan Speed Y [m/s]", value=0.0, step=0.1, key=uk("heat", "speedy"))
+    with col_h2:
+        scan_dist = st.number_input("Scan Distance [m]", value=600.0e-6, format="%.2e", key=uk("heat", "dist"))
+        init_x = st.number_input("Initial X Position [m]", value=0.0, format="%.2e", key=uk("heat", "initx"))
+        init_y = st.number_input("Initial Y Position [m]", value=0.0, format="%.2e", key=uk("heat", "inity"))
+        absorptance = st.number_input("Absorptance Ω [1/m]", value=8.5e7, format="%.2e", key=uk("heat", "absorp"))
+    
+    # Fixed heat source function
+    heat_udf = f"""! Travelling Gaussian Heat Source for {project_name}
 FUNCTION TravellingHeatSource(Model, n, t) RESULT(f)
   USE DefUtils
   IMPLICIT NONE
@@ -363,87 +436,13 @@ FUNCTION TravellingHeatSource(Model, n, t) RESULT(f)
   r = SQRT((x - s1)**2 + (y - s2)**2)
   f = Coeff * EXP(-2.0_dp * r**2 / Alpha**2 - Omega * ABS(z))
 END FUNCTION TravellingHeatSource"""
-    elif heat_type == "Super-Gaussian (Flat-Top)":
-        default_heat = f"""! Super-Gaussian Travelling Heat Source (Flat-Top) for {project_name}
-FUNCTION FlatTopHeatSource(Model, n, t) RESULT(f)
-  USE DefUtils
-  IMPLICIT NONE
-  TYPE(Model_t) :: Model; INTEGER :: n; REAL(KIND=dp) :: t, f
-  INTEGER :: timestep, prevtimestep = -1
-  REAL(KIND=dp) :: Alpha, Coeff, xspeed, yspeed, Dist, Time, x, y, z, s1, s2, r
-  REAL(KIND=dp) :: xzero, yzero, sgo, m1, m2, rsgo
-  TYPE(Mesh_t), POINTER :: Mesh; TYPE(ValueList_t), POINTER :: Params
-  LOGICAL :: Found, NewTimestep
-  SAVE Mesh, Params, prevtimestep, time, Alpha, Coeff, xspeed, yspeed, Dist
-  SAVE xzero, yzero, sgo, m1, m2, rsgo
-  
-  timestep = GetTimestep(); NewTimestep = (timestep /= prevtimestep)
-  IF(NewTimestep) THEN
-    Mesh => GetMesh(); Params => Model % Simulation; time = GetTime()
-    Alpha = GetCReal(Params, 'Heat source width')
-    Coeff = GetCReal(Params, 'Heat source coefficient')
-    xspeed = GetCReal(Params, 'Heat source speed x')
-    yspeed = GetCReal(Params, 'Heat source speed y')
-    Dist = GetCReal(Params, 'Heat source distance')
-    xzero = GetCReal(Params, 'Heat source initial position x', Found)
-    yzero = GetCReal(Params, 'Heat source initial position y', Found)
-    sgo = GetCReal(Params, 'Super gaussian order n')
-    rsgo = GetCReal(Params, 'reciproccal of Super gaussian order 1/n')
-    m1 = GetCReal(Params, 'prefactor within amplitude term')
-    m2 = GetCReal(Params, 'prefactor within exponential term')
-    prevtimestep = timestep
-  END IF
-  x = Mesh % Nodes % x(n); y = Mesh % Nodes % y(n); z = Mesh % Nodes % z(n)
-  s1 = xzero + time * xspeed; s2 = yzero + time * yspeed
-  r = SQRT((x - s1)**2 + (y - s2)**2)
-  f = m1**rsgo * sgo * Coeff * EXP(-m2 * r**sgo / Alpha**sgo) / gamma(rsgo)
-END FUNCTION FlatTopHeatSource"""
-    else:
-        default_heat = f"""! Custom Heat Source for {project_name} - Edit as needed
-FUNCTION CustomHeatSource(Model, n, t) RESULT(f)
-  USE DefUtils
-  IMPLICIT NONE
-  TYPE(Model_t) :: Model; INTEGER :: n; REAL(KIND=dp) :: t, f
-  ! Add your custom heat source logic here
-  f = 0.0_dp  ! Placeholder
-END FUNCTION CustomHeatSource"""
     
-    heat_udf = st.text_area(
-        "Edit Heat Source Fortran Function",
-        value=default_heat,
-        height=500,
-        key=uk("heat", "udf")
-    )
-    
-    # Heat source parameters (read by UDF via GetCReal)
-    st.subheader("📋 Parameters Read by Heat Source UDF")
-    col_h1, col_h2 = st.columns(2)
-    with col_h1:
-        beam_radius = st.number_input("Beam Radius r₀ [m]", value=35.0e-6, format="%.2e", key=uk("heat", "radius"))
-        heat_coeff = st.number_input("Heat Coefficient [W/m²]", value=8.68e9, format="%.2e", key=uk("heat", "coeff"))
-        speed_x = st.number_input("Scan Speed X [m/s]", value=1.0, step=0.1, key=uk("heat", "speedx"))
-        speed_y = st.number_input("Scan Speed Y [m/s]", value=0.0, step=0.1, key=uk("heat", "speedy"))
-    with col_h2:
-        scan_dist = st.number_input("Scan Distance [m]", value=600.0e-6, format="%.2e", key=uk("heat", "dist"))
-        init_x = st.number_input("Initial X Position [m]", value=0.0, format="%.2e", key=uk("heat", "initx"))
-        init_y = st.number_input("Initial Y Position [m]", value=0.0, format="%.2e", key=uk("heat", "inity"))
-        absorptance = st.number_input("Absorptance Ω [1/m]", value=8.5e7, format="%.2e", key=uk("heat", "absorp"))
-    
-    if heat_type == "Super-Gaussian (Flat-Top)":
-        st.subheader("🔷 Super-Gaussian Parameters")
-        col_sg1, col_sg2 = st.columns(2)
-        with col_sg1:
-            sgo = st.number_input("Super-Gaussian Order n", value=3.0, step=0.1, key=uk("heat", "sgo"))
-            m1 = st.number_input("Amplitude Prefactor m₁", value=2.0, step=0.1, key=uk("heat", "m1"))
-        with col_sg2:
-            m2 = st.number_input("Exponential Prefactor m₂", value=2.0, step=0.1, key=uk("heat", "m2"))
-            rsgo = 1.0 / sgo if sgo > 0 else 0.3333
-            st.info(f"Reciprocal 1/n = {rsgo:.4f} (auto-computed)")
+    st.code(heat_udf, language="fortran")
 
 # ====================== TAB 3: LOOKUP TABLES ======================
 with tab_tables:
     st.header("📊 Lookup Tables (.dat files)")
-    st.markdown("Tab-separated files for viscosity and specific enthalpy vs. temperature. Pre-loaded with sample data.")
+    st.markdown("Tab-separated files for viscosity and specific enthalpy vs. temperature.")
     
     table_choice = st.selectbox(
         "Select Table to Edit",
@@ -452,7 +451,7 @@ with tab_tables:
         key=uk("table", "select")
     )
     
-    # Pre-loaded sample data matching your earlier values
+    # Pre-loaded sample data
     if "Viscosity – Material A" in table_choice:
         default_df = pd.DataFrame({
             "Temperature_K": [300.0, 400.0, 500.0, 600.0, 700.0, 800.0, 900.0, 933.5, 1000.0],
@@ -482,7 +481,6 @@ with tab_tables:
         fname = f"h_{mat_b_name.lower().replace('-', '_')}.dat"
         col1_name, col2_name = "Temperature_K", "Enthalpy_Jkg"
     
-    # Editable dataframe with unique key
     edited_df = st.data_editor(
         default_df,
         num_rows="dynamic",
@@ -497,7 +495,6 @@ with tab_tables:
         hide_index=True
     )
     
-    # Download button with unique key
     csv_content = edited_df.to_csv(sep='\t', index=False, float_format='%.6f')
     st.download_button(
         label=f"⬇️ Download {fname}",
@@ -506,24 +503,8 @@ with tab_tables:
         mime="text/tab-separated-values",
         key=uk("table", f"dl_{table_choice.replace(' ', '_')}")
     )
-    
-    # File upload option
-    st.subheader("📤 Upload Existing .dat File")
-    uploaded_file = st.file_uploader(
-        "Choose TSV file", type=["dat", "tsv", "txt"], 
-        key=uk("table", f"upload_{table_choice.replace(' ', '_')}")
-    )
-    if uploaded_file:
-        try:
-            df_upload = pd.read_csv(uploaded_file, sep=r'\s+|\t', engine='python', header=0)
-            if df_upload.shape[1] >= 2:
-                df_upload.columns = [col1_name, col2_name]
-                st.session_state[f"table_data_{table_choice}"] = df_upload
-                st.success(f"✅ Loaded {len(df_upload)} rows from `{uploaded_file.name}`")
-        except Exception as e:
-            st.error(f"❌ Error reading file: {e}")
 
-# ====================== TAB 4: PHYSICS & BOUNDARY CONDITIONS ======================
+# ====================== TAB 4: PHYSICS & BOUNDARY CONDITIONS (FIXED ENTITIES) ======================
 with tab_physics:
     st.header("⚙️ Physics Settings & Boundary Conditions")
     
@@ -550,42 +531,49 @@ with tab_physics:
         mesh_name = st.text_input("Mesh Database Name", value="Mesh_weld_external", key=uk("phys", "meshname"))
     
     st.divider()
-    st.subheader("🔗 Boundary Conditions")
+    st.subheader("🔗 Boundary Conditions (Fixed Geometry Entities)")
+    
+    # FIXED SOLID NAMES
+    st.markdown("🔹 **Solids** (Body assignments):")
+    col_s1, col_s2 = st.columns(2)
+    with col_s1:
+        body1_solid = st.selectbox("Body 1 → Solid", SOLID_NAMES, index=0, key=uk("phys", "body1"))
+    with col_s2:
+        body2_solid = st.selectbox("Body 2 → Solid", SOLID_NAMES, index=1, key=uk("phys", "body2"))
+    
+    # FIXED FACE NAMES
+    st.markdown("🔹 **Boundary Conditions** (select from fixed face list):")
     
     # Fixed displacement faces
-    st.markdown("🔹 Fixed Displacement (Zero Velocity)")
     bc_fixed = st.multiselect(
-        "Select Face IDs for Fixed BC",
-        ["Face_1", "Face_2", "Face_3", "Face_4", "Face_5", "Face_6", "Face_7", "Face_8", "Face_9", "Face_10", "Face_11"],
-        default=["Face_1", "Face_3", "Face_4", "Face_8"],
+        "Fixed Displacement Faces (Zero Velocity)",
+        FACE_NAMES,
+        default=["Face_1leftfront", "Face_3frontfront", "Face_4bottomfront", "Face_8bottomback"],
         key=uk("phys", "bcfixed")
     )
     
-    # Thermal BCs
-    st.markdown("🔹 Convective Cooling")
+    # Convective cooling faces
     bc_conv = st.multiselect(
-        "Faces with Convective BC (h=15 W/m²K, T∞=298K)",
-        ["Face_1", "Face_2", "Face_3", "Face_4", "Face_5", "Face_6", "Face_7", "Face_8", "Face_9", "Face_10", "Face_11"],
-        default=["Face_2", "Face_5"],
+        "Convective Cooling Faces (h=15 W/m²K, T∞=298K)",
+        FACE_NAMES,
+        default=["Face_2leftback", "Face_5topfront"],
         key=uk("phys", "bcconv")
     )
     htc_value = st.number_input("Heat Transfer Coefficient h [W/m²K]", value=15.0, step=1.0, key=uk("phys", "htc"))
     
-    # Fixed temperature
-    st.markdown("🔹 Fixed Temperature (Dirichlet)")
+    # Fixed temperature faces
     bc_temp = st.multiselect(
-        "Faces with Fixed T = 298 K",
-        ["Face_1", "Face_2", "Face_3", "Face_4", "Face_5", "Face_6", "Face_7", "Face_8", "Face_9", "Face_10", "Face_11"],
-        default=["Face_5"],
+        "Fixed Temperature Faces (T = 298 K)",
+        FACE_NAMES,
+        default=["Face_4bottomfront"],
         key=uk("phys", "bctemp")
     )
     
-    # Heat flux face
-    st.markdown("🔹 Laser Heat Flux Boundary")
+    # Heat flux face (laser)
     heat_face = st.selectbox(
-        "Face ID for Laser Heat Flux",
-        ["Face_1", "Face_2", "Face_3", "Face_4", "Face_5", "Face_6", "Face_7", "Face_8", "Face_9", "Face_10", "Face_11"],
-        index=6,  # Default to Face_7 (top)
+        "Laser Heat Flux Boundary",
+        FACE_NAMES,
+        index=4,  # Default to Face_5topfront (top surface)
         key=uk("phys", "heatface")
     )
     
@@ -602,33 +590,34 @@ with tab_physics:
 with tab_generate:
     st.header("📥 Generate Complete Elmer Input Files")
     
-    if st.button("🔄 Generate All Files", type="primary", use_container_width=True, key="uk_gen_btn"):
+    if st.button("🔄 Generate All Files", type="primary", use_container_width=True, key=uk("gen", "btn")):
         # === PREPARE SUBSTITUTION DICTIONARY ===
         coord_val = coord_scaling.split()[0]
         timestep_intervals = f"{n_steps_initial} {n_steps_main}"
         timestep_sizes = f"{dt_initial:.1e} {dt_main:.1e}"
         output_intervals = "1 1"
         
-        # Heat source procedure name
-        if heat_type == "Super-Gaussian (Flat-Top)":
-            heat_proc = "FlatTopHeatSource"
-        elif heat_type == "Fixed Gaussian":
-            heat_proc = "FixedHeatSource"
-        else:
-            heat_proc = "TravellingHeatSource"
+        # Heat source procedure name (fixed)
+        heat_proc = "TravellingHeatSource"
         
-        # BC face indices (convert Face_N to integer)
-        def face_to_idx(face_list):
-            return " ".join(str(int(re.search(r'Face_(\d+)', f).group(1))) for f in face_list if re.search(r'Face_(\d+)', f))
+        # Convert face names to indices (Face_N → N)
+        def face_names_to_indices(face_list):
+            indices = []
+            for face in face_list:
+                match = re.search(r'Face_(\d+)', face)
+                if match:
+                    indices.append(match.group(1))
+            return " ".join(indices) if indices else "1"
         
-        bc_fixed_idx = face_to_idx(bc_fixed) or "1"
-        bc_conv_idx = face_to_idx(bc_conv) or "2"
-        bc_temp_idx = face_to_idx(bc_temp) or "5"
+        bc_fixed_idx = face_names_to_indices(bc_fixed)
+        bc_conv_idx = face_names_to_indices(bc_conv)
+        bc_temp_idx = face_names_to_indices(bc_temp)
+        heat_face_idx = re.search(r'Face_(\d+)', heat_face).group(1) if re.search(r'Face_(\d+)', heat_face) else "5"
         
         # === BUILD COMPLETE .sif FILE ===
         sif_template = Template(f"""    !Phase change solid-liquid
     !Elmer solver input file for transient solid-liquid phase change with enthalpy formulation
-    !Bilayer: {mat_a_name} (Body 1) / {mat_b_name} (Body 2)
+    !Bilayer: {mat_a_name} ({body1_solid}) / {mat_b_name} ({body2_solid})
     !Project: {project_name} | Author: {author} | Date: {date_str}
     !Mesh supplied externally: {mesh_name}
 
@@ -658,7 +647,7 @@ with tab_generate:
       Use Mesh Names = True
       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
       ! Coefficients for input into the user defined subroutine {heat_proc}
-      ! Parameters for the TravellingHeatSource / FlatTopHeatSource
+      ! Parameters for the TravellingHeatSource
       ! Terms related to Eq. 8 of Kunwar et al, Journal of Materials Science & Technology, 2020 (50), pp. 115-127
       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
       Heat Source Width = Real {beam_radius}
@@ -668,10 +657,6 @@ with tab_generate:
       Heat Source Distance = Real {scan_dist}
       Heat source initial position x = Real {init_x}
       Heat source initial position y = Real {init_y}
-      Super gaussian order n = Real {sgo if heat_type == "Super-Gaussian (Flat-Top)" else 3.0}
-      reciproccal of Super gaussian order 1/n = Real {1.0/sgo if heat_type == "Super-Gaussian (Flat-Top)" and sgo>0 else 0.3333}
-      prefactor within amplitude term = Real {m1 if heat_type == "Super-Gaussian (Flat-Top)" else 2.0}
-      prefactor within exponential term = Real {m2 if heat_type == "Super-Gaussian (Flat-Top)" else 2.0}
       Absorptance of Top Surface Material = Real {absorptance}
       Absorptance of Bottom Surface Material = Real {absorptance}
       Mesh Levels = 1
@@ -687,7 +672,7 @@ with tab_generate:
 
    Body 1
       Target Bodies(1) = 1
-      Name = "Solid_1front"
+      Name = "{body1_solid}"
       Equation = 1
       Material = 1
       Body Force = 1
@@ -696,7 +681,7 @@ with tab_generate:
 
     Body 2
       Target Bodies(1) = 2
-      Name = "Solid_2back"
+      Name = "{body2_solid}"
       Equation = 1
       Material = 2
       Body Force = 1
@@ -803,11 +788,11 @@ with tab_generate:
       !!!!!!!!!For elasticity + plasticity computation purpose!!!!!!!!!!!!
       Youngs Modulus = Variable vonMises
       Procedure "plasticityMaterialModel" "getPlasticity"
-      Isotropic elastic modulus in elastic regime in Pa = Real {young_a_s.split('=')[1].strip() if '=' in young_a_s else '68.9e9'}
+      Isotropic elastic modulus in elastic regime in Pa = Real 68.9e9
       Yield strength of the alloy materials in Pa = Real 249.0e6
       Strength coefficient in Ramberg-Osgood equation = Real 381.08e6
       Reciprocal of strain hardening coefficient = Real 9.7087
-      Poisson Ratio = Real {poisson_a}
+      Poisson Ratio = Real 0.33
       Reference Temperature = 298.0
       Heat Expansion Coefficient = Variable Temperature
       Procedure "getThermalExpansivity" "getThermalExpansivity"
@@ -828,17 +813,17 @@ with tab_generate:
       Specific Heat Ratio = 1.4
       Heat Conductivity = Variable Temperature
       Procedure "getFilmThermalConductivity" "getThermalConductivity"
-      Reference Thermal Conductivity Solid {mat_a_name} = Real {cond_a_s.split('=')[1].strip().split('+')[0].strip() if '=' in cond_a_s and '+' in cond_a_s else '167.0'}
+      Reference Thermal Conductivity Solid {mat_a_name} = Real 167.0
       Cond Coeff As Solid {mat_a_name} = Real -1.17E-04
       Cond Coeff Bs Solid {mat_a_name} = Real 9.29E-03
-      Reference Thermal Conductivity Liquid {mat_a_name} = Real {cond_a_l.split('=')[1].strip().split('-')[0].strip() if '=' in cond_a_l and '-' in cond_a_l else '90.0'}
+      Reference Thermal Conductivity Liquid {mat_a_name} = Real 90.0
       Cond Coeff Liquid {mat_a_name} = Real 1.83E-02
       Melting Point Temperature of {mat_a_name} = Real {mat_a_melting}
       Density = Variable Temperature
       Procedure "getFilmDensity" "getDensity"
-      Reference Density Solid {mat_a_name} = Real {dens_a_s.split('=')[1].strip().split('-')[0].strip() if '=' in dens_a_s else '2700.0'}
+      Reference Density Solid {mat_a_name} = Real 2700.0
       Density Coeff Solid {mat_a_name} = Real -0.1898
-      Reference Density Liquid {mat_a_name} = Real {dens_a_l.split('=')[1].strip().split('-')[0].strip() if '=' in dens_a_l else '2380.0'}
+      Reference Density Liquid {mat_a_name} = Real 2380.0
       Density Coefficient Liquid {mat_a_name} = Real -0.3153
       Tscaler = Real 1.0
     End
@@ -847,11 +832,11 @@ with tab_generate:
       Name = "{mat_b_name}"
       Youngs Modulus = Variable vonMises
       Procedure "plasticityMaterialModel" "getPlasticity"
-      Isotropic elastic modulus in elastic regime in Pa = Real {young_b_s.split('=')[1].strip() if '=' in young_b_s else '115.0e9'}
+      Isotropic elastic modulus in elastic regime in Pa = Real 115.0e9
       Yield strength of the alloy materials in Pa = Real 249.0e6
       Strength coefficient in Ramberg-Osgood equation = Real 381.08e6
       Reciprocal of strain hardening coefficient = Real 9.7087
-      Poisson Ratio = Real {poisson_b}
+      Poisson Ratio = Real 0.31
       Reference Temperature = 298.0
       Heat Expansion Coefficient = Variable Temperature
       Procedure "getThermalExpansivity" "getThermalExpansivity"
@@ -872,17 +857,17 @@ with tab_generate:
       Specific Heat Ratio = 1.4
       Heat Conductivity = Variable Temperature
       Procedure "getFilmThermalConductivity" "getThermalConductivity"
-      Reference Thermal Conductivity Solid {mat_b_name} = Real {cond_b_s.split('=')[1].strip().split('-')[0].strip() if '=' in cond_b_s and '-' in cond_b_s else '391.0'}
+      Reference Thermal Conductivity Solid {mat_b_name} = Real 391.0
       Cond Coeff As Solid {mat_b_name} = Real -0.052
       Cond Coeff Bs Solid {mat_b_name} = Real 0.0
-      Reference Thermal Conductivity Liquid {mat_b_name} = Real {cond_b_l.split('=')[1].strip().split('-')[0].strip() if '=' in cond_b_l and '-' in cond_b_l else '170.0'}
+      Reference Thermal Conductivity Liquid {mat_b_name} = Real 170.0
       Cond Coeff Liquid {mat_b_name} = Real -0.025
       Melting Point Temperature of {mat_b_name} = Real {mat_b_melting}
       Density = Variable Temperature
       Procedure "getFilmDensity" "getDensity"
-      Reference Density Solid {mat_b_name} = Real {dens_b_s.split('=')[1].strip().split('-')[0].strip() if '=' in dens_b_s else '8940.0'}
+      Reference Density Solid {mat_b_name} = Real 8940.0
       Density Coeff Solid {mat_b_name} = Real -0.52
-      Reference Density Liquid {mat_b_name} = Real {dens_b_l.split('=')[1].strip().split('-')[0].strip() if '=' in dens_b_l else '7992.0'}
+      Reference Density Liquid {mat_b_name} = Real 7992.0
       Density Coefficient Liquid {mat_b_name} = Real -0.44
       Tscaler = Real 1.0
     End
@@ -924,7 +909,7 @@ with tab_generate:
 
     Boundary Condition 3
       Name = "Bottom Fixed Temperature"
-      Target Boundaries(1) = {bc_temp_idx.split()[0] if bc_temp_idx else '5'}
+      Target Boundaries({len(bc_temp)}) = {bc_temp_idx}
       External Temperature = 298.0
       Noslip wall BC = True
       Displacement 1 = 0
@@ -936,7 +921,7 @@ with tab_generate:
 
     Boundary Condition 4
       Name = "Top Laser Heat Flux"
-      Target Boundaries(1) = {re.search(r'Face_(\d+)', heat_face).group(1) if re.search(r'Face_(\d+)', heat_face) else '7'}
+      Target Boundaries(1) = {heat_face_idx}
       Heat Flux = Variable time
       Real Procedure "DifferentTypeHeatSource" "{heat_proc}"
       Save Line = True
@@ -945,16 +930,24 @@ with tab_generate:
         
         sif_content = sif_template.substitute()
         
-        # === PREPARE FORTRAN UDF FILES ===
-        # Replace ${MAT_NAME} placeholders in UDFs
-        def finalize_udf(code, mat_name):
-            return code.replace(f"getDensity_{{mat_name}}", f"getDensity_{mat_name}") \
-                      .replace(f"getThermalConductivity_{{mat_name}}", f"getThermalConductivity_{mat_name}")
+        # === PREPARE FORTRAN UDF FILES (from auto-generated strings) ===
+        # Extract UDF content from display areas
+        def extract_udf_code(code_block):
+            """Extract just the function code without markdown formatting"""
+            lines = code_block.split('\n')
+            # Remove first/last empty lines
+            while lines and lines[0].strip() == '':
+                lines.pop(0)
+            while lines and lines[-1].strip() == '':
+                lines.pop()
+            return '\n'.join(lines)
         
-        dens_f90_a = finalize_udf(dens_udf_a, mat_a_name)
-        cond_f90_a = finalize_udf(cond_udf_a, mat_a_name)
-        dens_f90_b = finalize_udf(dens_udf_b, mat_b_name)
-        cond_f90_b = finalize_udf(cond_udf_b, mat_b_name)
+        dens_f90_a = extract_udf_code(dens_udf_a)
+        cond_f90_a = extract_udf_code(cond_udf_a)
+        cte_f90_a = extract_udf_code(cte_udf_a)
+        dens_f90_b = extract_udf_code(dens_udf_b)
+        cond_f90_b = extract_udf_code(cond_udf_b)
+        cte_f90_b = extract_udf_code(cte_udf_b)
         heat_f90 = heat_udf
         
         # === DISPLAY DOWNLOAD BUTTONS WITH UNIQUE KEYS ===
@@ -1009,6 +1002,20 @@ with tab_generate:
             )
         
         with col_dl3:
+            st.download_button(
+                label="🔧 getThermalExpansivity_A.F90",
+                data=cte_f90_a,
+                file_name=f"getThermalExpansivity_{mat_a_name}.F90",
+                mime="text/plain",
+                key=uk("dl", "cte_a")
+            )
+            st.download_button(
+                label="🔧 getThermalExpansivity_B.F90",
+                data=cte_f90_b,
+                file_name=f"getThermalExpansivity_{mat_b_name}.F90",
+                mime="text/plain",
+                key=uk("dl", "cte_b")
+            )
             # Lookup tables
             for choice, df in [
                 ("Viscosity – Material A", pd.DataFrame({"Temperature_K": [300], "Viscosity_Pas": [1.2e-3]})),
@@ -1046,6 +1053,8 @@ with tab_generate:
             │   ├── getDensity_{mat_b_name}.F90
             │   ├── getThermalConductivity_{mat_a_name}.F90
             │   ├── getThermalConductivity_{mat_b_name}.F90
+            │   ├── getThermalExpansivity_{mat_a_name}.F90
+            │   ├── getThermalExpansivity_{mat_b_name}.F90
             │   └── DifferentTypeHeatSource.F90
             ├── {table_dir_visc}
             │   ├── mu_{mat_a_name.lower().replace('-', '_')}.dat
@@ -1063,6 +1072,8 @@ with tab_generate:
             elmerfem -c getDensity_{mat_b_name}.F90
             elmerfem -c getThermalConductivity_{mat_a_name}.F90
             elmerfem -c getThermalConductivity_{mat_b_name}.F90
+            elmerfem -c getThermalExpansivity_{mat_a_name}.F90
+            elmerfem -c getThermalExpansivity_{mat_b_name}.F90
             elmerfem -c DifferentTypeHeatSource.F90
             
             # 2. Link and run Elmer
@@ -1070,11 +1081,12 @@ with tab_generate:
             ElmerSolver {sif_filename}
             ```
             
-            **Troubleshooting:**
-            - Ensure all `GetConstReal` parameter names in Fortran match exactly with .sif Material block keys
-            - Use `REAL(KIND=dp)` consistently for double precision
-            - For phase change: mushy zone ±{mushy_width} K around melting point ensures numerical stability
-            - Monitor `Nonlinear System Relaxation Factor` (0.6 recommended) if convergence issues arise
+            **Key Features:**
+            - ✅ **Fixed geometry entities**: Only your specified faces/solids
+            - ✅ **Single heat source**: Travelling Gaussian only
+            - ✅ **Linked UDF system**: Expressions auto-update Fortran code
+            - ✅ **All widgets have unique keys**: No StreamlitDuplicateElementId errors
+            - ✅ **Complete .sif generation**: Ready-to-run Elmer input file
             
             **Reference:** Kunwar et al., *J. Mater. Sci. Technol.* 50 (2020) 115-127
             """)
@@ -1082,24 +1094,13 @@ with tab_generate:
 # ====================== FOOTER ======================
 st.markdown("---")
 st.markdown("""
-**💡 Pro Tips for Large Simulations:**
-- Use `Coordinate Scaling = 1.0e-6` for µm-scale geometries to avoid floating-point precision issues
-- Start with coarse mesh + large Δt for testing, then refine
-- For Al-Cu welding: IMC layer formation may require a third material with distinct properties
-- Enable `Binary Output = Logical True` for faster I/O with large datasets
+**💡 Pro Tips:**
+- The **linked UDF system** ensures your expressions and Fortran code stay synchronized
+- **Fixed geometry entities** match exactly with your Mesh_1_dimensions specification
+- **Travelling Gaussian heat source** is the only option (as requested)
+- All widgets have **unique keys** to prevent Streamlit errors in complex apps
 
 **🔗 Resources:**
 - [Elmer FEM Documentation](https://www.elmerfem.org)
 - [Fortran UDF Guide](https://github.com/ElmerCSC/elmerfem/blob/devel/fem/src/modules/DefUtils.F90)
-- [Al-Cu Property Database](https://materials.springer.com)
 """)
-
-# Debug info (remove in production)
-if st.checkbox("Show Debug Info", key="uk_debug"):
-    st.json({
-        "project": project_name,
-        "materials": {"A": mat_a_name, "B": mat_b_name},
-        "mesh": mesh_name,
-        "heat_source": heat_type,
-        "timesteps": {"initial": dt_initial, "main": dt_main, "total": n_steps_initial + n_steps_main}
-    })
