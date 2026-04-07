@@ -5,7 +5,8 @@ Elmer FEM .sif Generator for Dissimilar Material Welding
 - FIXED GEOMETRY: Only specified faces/solids from Mesh_1_dimensions
 - SINGLE HEAT SOURCE: Travelling Gaussian only
 - LINKED UDF SYSTEM: Expressions auto-update Fortran UDFs
-- ALL WIDGETS HAVE UNIQUE KEYS (no StreamlitDuplicateElementId errors)
+- BULLETPROOF MULTISELECTS: Defensive filtering prevents invalid default errors
+- ALL WIDGETS HAVE UNIQUE KEYS: No StreamlitDuplicateElementId or StreamlitAPIException errors
 """
 
 import streamlit as st
@@ -41,6 +42,22 @@ _Mesh file supplied externally with fixed geometry entities._
 def uk(section: str, var: str, suffix: str = "") -> str:
     """Generate unique key for Streamlit widgets: section_var_suffix"""
     return f"{section}_{var}_{suffix}".strip("_")
+
+# ====================== HELPER: DEFENSIVE MULTISELECT ======================
+def safe_multiselect(label, options, default=None, key=None, **kwargs):
+    """
+    Bulletproof multiselect that filters invalid defaults.
+    Prevents StreamlitAPIException when default values aren't in options.
+    """
+    if default is None:
+        default = []
+    # Filter defaults to only include valid options
+    valid_defaults = [d for d in default if d in options]
+    # Show warning if any defaults were filtered out
+    if len(valid_defaults) < len(default):
+        invalid = set(default) - set(options)
+        st.warning(f"⚠️ Removed invalid defaults for '{label}': {invalid}")
+    return st.multiselect(label, options, default=valid_defaults, key=key, **kwargs)
 
 # ====================== FIXED GEOMETRY ENTITIES ======================
 # From your Mesh_1_dimensions specification
@@ -118,7 +135,7 @@ with tab_materials:
             expr_fortran = expr.replace("T", temp_var)
             # Ensure dp suffix for literals
             expr_fortran = re.sub(r'(\d+\.\d+)', r'\1_dp', expr_fortran)
-            expr_fortran = re.sub(r'(\d+)(?!\.)', r'\1.0_dp', expr_fortran)
+            expr_fortran = re.sub(r'(?<!\.)(\b\d+\b)(?!\.)', r'\1.0_dp', expr_fortran)
             return expr_fortran
         
         dens_udf_a = f"""FUNCTION getDensity_{mat_a_name}(model, n, temp) RESULT(denst)
@@ -204,7 +221,7 @@ END FUNCTION getThermalConductivity_{mat_a_name}"""
         cte_udf_a = f"""FUNCTION getThermalExpansivity_{mat_a_name}(model, n, temp) RESULT(expansivity)
   USE DefUtils
   IMPLICIT NONE
-  TYPE(Model_t) :: model; INTEGER :: n; REAL(KIND=tp) :: temp, expansivity, tscaler
+  TYPE(Model_t) :: model; INTEGER :: n; REAL(KIND=dp) :: temp, expansivity, tscaler
   REAL(KIND=dp) :: refSolExp, refTemp, alphas, betas
   LOGICAL :: GotIt
   TYPE(ValueList_t), POINTER :: material
@@ -504,7 +521,7 @@ with tab_tables:
         key=uk("table", f"dl_{table_choice.replace(' ', '_')}")
     )
 
-# ====================== TAB 4: PHYSICS & BOUNDARY CONDITIONS (FIXED ENTITIES) ======================
+# ====================== TAB 4: PHYSICS & BOUNDARY CONDITIONS (FIXED ENTITIES + DEFENSIVE MULTISELECTS) ======================
 with tab_physics:
     st.header("⚙️ Physics Settings & Boundary Conditions")
     
@@ -541,35 +558,38 @@ with tab_physics:
     with col_s2:
         body2_solid = st.selectbox("Body 2 → Solid", SOLID_NAMES, index=1, key=uk("phys", "body2"))
     
-    # FIXED FACE NAMES
+    # FIXED FACE NAMES - USING DEFENSIVE MULTISELECTS
     st.markdown("🔹 **Boundary Conditions** (select from fixed face list):")
     
-    # Fixed displacement faces
-    bc_fixed = st.multiselect(
+    # Fixed displacement faces - DEFENSIVE: filter invalid defaults
+    bc_fixed_defaults = ["Face_1leftfront", "Face_3frontfront", "Face_4bottomfront", "Face_7bottomback"]  # FIXED: was Face_8bottomback
+    bc_fixed = safe_multiselect(
         "Fixed Displacement Faces (Zero Velocity)",
         FACE_NAMES,
-        default=["Face_1leftfront", "Face_3frontfront", "Face_4bottomfront", "Face_8bottomback"],
+        default=bc_fixed_defaults,
         key=uk("phys", "bcfixed")
     )
     
-    # Convective cooling faces
-    bc_conv = st.multiselect(
+    # Convective cooling faces - DEFENSIVE
+    bc_conv_defaults = ["Face_2leftback", "Face_5topfront"]
+    bc_conv = safe_multiselect(
         "Convective Cooling Faces (h=15 W/m²K, T∞=298K)",
         FACE_NAMES,
-        default=["Face_2leftback", "Face_5topfront"],
+        default=bc_conv_defaults,
         key=uk("phys", "bcconv")
     )
     htc_value = st.number_input("Heat Transfer Coefficient h [W/m²K]", value=15.0, step=1.0, key=uk("phys", "htc"))
     
-    # Fixed temperature faces
-    bc_temp = st.multiselect(
+    # Fixed temperature faces - DEFENSIVE
+    bc_temp_defaults = ["Face_4bottomfront"]
+    bc_temp = safe_multiselect(
         "Fixed Temperature Faces (T = 298 K)",
         FACE_NAMES,
-        default=["Face_4bottomfront"],
+        default=bc_temp_defaults,
         key=uk("phys", "bctemp")
     )
     
-    # Heat flux face (laser)
+    # Heat flux face (laser) - single select, no default issue
     heat_face = st.selectbox(
         "Laser Heat Flux Boundary",
         FACE_NAMES,
@@ -1085,7 +1105,8 @@ with tab_generate:
             - ✅ **Fixed geometry entities**: Only your specified faces/solids
             - ✅ **Single heat source**: Travelling Gaussian only
             - ✅ **Linked UDF system**: Expressions auto-update Fortran code
-            - ✅ **All widgets have unique keys**: No StreamlitDuplicateElementId errors
+            - ✅ **Bulletproof multiselects**: Defensive filtering prevents invalid default errors
+            - ✅ **All widgets have unique keys**: No StreamlitDuplicateElementId or StreamlitAPIException errors
             - ✅ **Complete .sif generation**: Ready-to-run Elmer input file
             
             **Reference:** Kunwar et al., *J. Mater. Sci. Technol.* 50 (2020) 115-127
@@ -1098,6 +1119,7 @@ st.markdown("""
 - The **linked UDF system** ensures your expressions and Fortran code stay synchronized
 - **Fixed geometry entities** match exactly with your Mesh_1_dimensions specification
 - **Travelling Gaussian heat source** is the only option (as requested)
+- **Defensive multiselects** prevent crashes when default values don't match options
 - All widgets have **unique keys** to prevent Streamlit errors in complex apps
 
 **🔗 Resources:**
