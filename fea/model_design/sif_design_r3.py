@@ -2,12 +2,11 @@
 # -*- coding: utf-8 -*-
 """
 Elmer FEM .sif Generator for Dissimilar Material Welding
-- ALL HEAT SOURCE TYPES: Travelling Gaussian, Fixed Gaussian, Flat-Top,
-  Double Ellipsoidal, **Custom Gaussian (user provided)**
+- ALL HEAT SOURCE TYPES: Travelling Gaussian, Fixed Gaussian, Flat-Top, Double Ellipsoidal
 - FIXED GEOMETRY: Only specified faces/solids from Mesh_1_dimensions
 - LINKED UDF SYSTEM: Expressions auto-update Fortran UDFs
 - BULLETPROOF MULTISELECTS: Defensive filtering prevents invalid default errors
-- **ZIP DOWNLOAD**: All files in one click – no session state crash**
+- COMPLETE DOWNLOAD: All files ready for Elmer compilation
 """
 
 import streamlit as st
@@ -15,8 +14,6 @@ import pandas as pd
 from string import Template
 from datetime import datetime
 import re
-import zipfile
-import io
 
 # Page config
 st.set_page_config(
@@ -48,19 +45,25 @@ def uk(section: str, var: str, suffix: str = "") -> str:
 
 # ====================== HELPER: DEFENSIVE MULTISELECT ======================
 def safe_multiselect(label, options, default=None, key=None, **kwargs):
-    """Bulletproof multiselect that filters invalid defaults."""
+    """
+    Bulletproof multiselect that filters invalid defaults.
+    Prevents StreamlitAPIException when default values aren't in options.
+    """
     if default is None:
         default = []
+    # Filter defaults to only include valid options
     valid_defaults = [d for d in default if d in options]
+    # Show warning if any defaults were filtered out
     if len(valid_defaults) < len(default):
         invalid = set(default) - set(options)
         st.warning(f"⚠️ Removed invalid defaults for '{label}': {invalid}")
     return st.multiselect(label, options, default=valid_defaults, key=key, **kwargs)
 
 # ====================== FIXED GEOMETRY ENTITIES ======================
+# From your Mesh_1_dimensions specification
 SOLID_NAMES = ["Solid_1front", "Solid_2back"]
 FACE_NAMES = [
-    "Face_1leftfront", "Face_2leftback", "Face_3frontfront",
+    "Face_1leftfront", "Face_2leftback", "Face_3frontfront", 
     "Face_4bottomfront", "Face_5topfront", "Face_6interfacefront",
     "Face_7bottomback", "Face_8topback", "Face_9backback",
     "Face_10rightfront", "Face_11rightback"
@@ -82,50 +85,59 @@ table_dir_enth = st.sidebar.text_input("Enthalpy Table Dir", value="./specific_e
 # ====================== TABS NAVIGATION ======================
 tab_materials, tab_heat, tab_tables, tab_physics, tab_generate = st.tabs([
     "🧪 Materials & UDFs",
-    "🔦 Heat Source",
+    "🔦 Heat Source", 
     "📊 Lookup Tables",
     "⚙️ Physics & BCs",
     "📥 Generate Files"
 ])
 
-# ====================== TAB 1: MATERIALS & FORTRAN UDFs ======================
+# ====================== TAB 1: MATERIALS & FORTRAN UDFs (LINKED SYSTEM) ======================
 with tab_materials:
     st.header("🧪 Material Properties & Linked Fortran UDFs")
     st.info("🔹 **Expressions automatically update UDFs** - edit property expressions below to see UDF code change in real-time!")
-
+    
     mat_col1, mat_col2 = st.columns(2)
-
+    
     # ----- MATERIAL A -----
     with mat_col1:
         st.subheader("Material A (Solid_1front)")
         mat_a_name = st.text_input("Material Name", value="AA6061_Al", key=uk("matA", "name"))
         mat_a_melting = st.number_input("Melting Point [K]", value=933.5, step=0.1, key=uk("matA", "tmelt"))
-
+        
         st.markdown("**Temperature-Dependent Property Expressions** (T in Kelvin):")
+        
+        # Density expressions - these will auto-update UDFs
         st.markdown("🔹 Density ρ(T) [kg/m³]")
         dens_a_s_expr = st.text_input("Solid phase: ρ = ", value="2700.0 - 0.11*(T - 298.0)", key=uk("matA", "dens_s_expr"))
         dens_a_l_expr = st.text_input("Liquid phase: ρ = ", value="2380.0 - 0.28*(T - 933.5)", key=uk("matA", "dens_l_expr"))
-
+        
+        # Thermal conductivity
         st.markdown("🔹 Thermal Conductivity k(T) [W/(m·K)]")
         cond_a_s_expr = st.text_input("Solid: k = ", value="167.0 + 0.12*(T - 298.0)", key=uk("matA", "cond_s_expr"))
         cond_a_l_expr = st.text_input("Liquid: k = ", value="90.0 - 0.012*(T - 933.5)", key=uk("matA", "cond_l_expr"))
-
+        
+        # CTE
         st.markdown("🔹 CTE α(T) [1/K]")
         cte_a_s_expr = st.text_input("Solid: α = ", value="23.0e-6 + 2.1e-8*(T - 298.0)", key=uk("matA", "cte_s_expr"))
         cte_a_l_expr = st.text_input("Liquid: α = ", value="0.0", key=uk("matA", "cte_l_expr"))
-
+        
+        # Latent heat
         latent_a = st.number_input("Latent Heat of Fusion L_f [J/kg]", value=3.97e5, step=1e3, format="%.0f", key=uk("matA", "latent"))
-
+        
         st.divider()
         st.markdown("### 🔧 Auto-Generated Fortran UDF – Material A")
         st.caption("This UDF is automatically generated from your expressions above")
-
+        
+        # AUTO-GENERATE DENSITY UDF FROM EXPRESSIONS
         def parse_expression(expr, temp_var="temp"):
+            """Convert expression like '2700.0 - 0.11*(T - 298.0)' to Fortran with temp variable"""
+            # Replace T with temp_var
             expr_fortran = expr.replace("T", temp_var)
+            # Ensure dp suffix for literals
             expr_fortran = re.sub(r'(\d+\.\d+)', r'\1_dp', expr_fortran)
             expr_fortran = re.sub(r'(?<!\.)(\b\d+\b)(?!\.)', r'\1.0_dp', expr_fortran)
             return expr_fortran
-
+        
         dens_udf_a = f"""FUNCTION getDensity_{mat_a_name}(model, n, temp) RESULT(denst)
   USE DefUtils
   IMPLICIT NONE
@@ -162,8 +174,10 @@ with tab_materials:
       denst = {parse_expression(dens_a_s_expr)}
   END IF
 END FUNCTION getDensity_{mat_a_name}"""
+        
         st.code(dens_udf_a, language="fortran")
-
+        
+        # AUTO-GENERATE CONDUCTIVITY UDF
         cond_udf_a = f"""FUNCTION getThermalConductivity_{mat_a_name}(model, n, temp) RESULT(thcondt)
   USE DefUtils
   IMPLICIT NONE
@@ -200,8 +214,10 @@ END FUNCTION getDensity_{mat_a_name}"""
       thcondt = {parse_expression(cond_a_s_expr)}
   END IF
 END FUNCTION getThermalConductivity_{mat_a_name}"""
+        
         st.code(cond_udf_a, language="fortran")
-
+        
+        # AUTO-GENERATE CTE UDF
         cte_udf_a = f"""FUNCTION getThermalExpansivity_{mat_a_name}(model, n, temp) RESULT(expansivity)
   USE DefUtils
   IMPLICIT NONE
@@ -233,33 +249,40 @@ END FUNCTION getThermalConductivity_{mat_a_name}"""
       expansivity = {parse_expression(cte_a_s_expr)}
   END IF
 END FUNCTION getThermalExpansivity_{mat_a_name}"""
+        
         st.code(cte_udf_a, language="fortran")
-
+    
     # ----- MATERIAL B -----
     with mat_col2:
         st.subheader("Material B (Solid_2back)")
         mat_b_name = st.text_input("Material Name", value="T2_Cu", key=uk("matB", "name"))
         mat_b_melting = st.number_input("Melting Point [K]", value=1356.6, step=0.1, key=uk("matB", "tmelt"))
-
+        
         st.markdown("**Temperature-Dependent Property Expressions** (T in Kelvin):")
+        
+        # Density
         st.markdown("🔹 Density ρ(T) [kg/m³]")
         dens_b_s_expr = st.text_input("Solid phase: ρ = ", value="8940.0 - 0.52*(T - 298.0)", key=uk("matB", "dens_s_expr"))
         dens_b_l_expr = st.text_input("Liquid phase: ρ = ", value="7992.0 - 0.44*(T - 1356.6)", key=uk("matB", "dens_l_expr"))
-
+        
+        # Conductivity
         st.markdown("🔹 Thermal Conductivity k(T) [W/(m·K)]")
         cond_b_s_expr = st.text_input("Solid: k = ", value="391.0 - 0.052*(T - 298.0)", key=uk("matB", "cond_s_expr"))
         cond_b_l_expr = st.text_input("Liquid: k = ", value="170.0 - 0.025*(T - 1356.6)", key=uk("matB", "cond_l_expr"))
-
+        
+        # CTE
         st.markdown("🔹 CTE α(T) [1/K]")
         cte_b_s_expr = st.text_input("Solid: α = ", value="16.4e-6 + 2.5e-8*(T - 298.0)", key=uk("matB", "cte_s_expr"))
         cte_b_l_expr = st.text_input("Liquid: α = ", value="0.0", key=uk("matB", "cte_l_expr"))
-
+        
+        # Latent heat
         latent_b = st.number_input("Latent Heat of Fusion L_f [J/kg]", value=2.05e5, step=1e3, format="%.0f", key=uk("matB", "latent"))
-
+        
         st.divider()
         st.markdown("### 🔧 Auto-Generated Fortran UDF – Material B")
         st.caption("This UDF is automatically generated from your expressions above")
-
+        
+        # AUTO-GENERATE DENSITY UDF
         dens_udf_b = f"""FUNCTION getDensity_{mat_b_name}(model, n, temp) RESULT(denst)
   USE DefUtils
   IMPLICIT NONE
@@ -294,8 +317,10 @@ END FUNCTION getThermalExpansivity_{mat_a_name}"""
       denst = {parse_expression(dens_b_s_expr)}
   END IF
 END FUNCTION getDensity_{mat_b_name}"""
+        
         st.code(dens_udf_b, language="fortran")
-
+        
+        # AUTO-GENERATE CONDUCTIVITY UDF
         cond_udf_b = f"""FUNCTION getThermalConductivity_{mat_b_name}(model, n, temp) RESULT(thcondt)
   USE DefUtils
   IMPLICIT NONE
@@ -332,8 +357,10 @@ END FUNCTION getDensity_{mat_b_name}"""
       thcondt = {parse_expression(cond_b_s_expr)}
   END IF
 END FUNCTION getThermalConductivity_{mat_b_name}"""
+        
         st.code(cond_udf_b, language="fortran")
-
+        
+        # AUTO-GENERATE CTE UDF
         cte_udf_b = f"""FUNCTION getThermalExpansivity_{mat_b_name}(model, n, temp) RESULT(expansivity)
   USE DefUtils
   IMPLICIT NONE
@@ -365,21 +392,21 @@ END FUNCTION getThermalConductivity_{mat_b_name}"""
       expansivity = {parse_expression(cte_b_s_expr)}
   END IF
 END FUNCTION getThermalExpansivity_{mat_b_name}"""
+        
         st.code(cte_udf_b, language="fortran")
 
-# ====================== TAB 2: HEAT SOURCE (WITH CUSTOM GAUSSIAN) ======================
+# ====================== TAB 2: HEAT SOURCE (ALL TYPES) ======================
 with tab_heat:
     st.header("🔦 Laser Heat Source Function")
     st.info("✅ **Select from multiple heat source types**")
-
-    # NEW: Added "Custom Gaussian (user provided)" option
+    
+    # Heat source type selection
     heat_type = st.selectbox(
         "Heat Source Type",
-        ["Travelling Gaussian", "Fixed Gaussian", "Flat-Top (Super-Gaussian)",
-         "Double Ellipsoidal", "Custom Gaussian (user provided)"],
+        ["Travelling Gaussian", "Fixed Gaussian", "Flat-Top (Super-Gaussian)", "Double Ellipsoidal"],
         key=uk("heat", "type")
     )
-
+    
     # Common parameters
     col_h1, col_h2 = st.columns(2)
     with col_h1:
@@ -392,7 +419,7 @@ with tab_heat:
         init_x = st.number_input("Initial X Position [m]", value=0.0, format="%.2e", key=uk("heat", "initx"))
         init_y = st.number_input("Initial Y Position [m]", value=0.0, format="%.2e", key=uk("heat", "inity"))
         absorptance = st.number_input("Absorptance Ω [1/m]", value=8.5e7, format="%.2e", key=uk("heat", "absorp"))
-
+    
     # Type-specific parameters
     if heat_type == "Flat-Top (Super-Gaussian)":
         st.subheader("🔷 Super-Gaussian Parameters")
@@ -404,7 +431,7 @@ with tab_heat:
             m2 = st.number_input("Exponential Prefactor m₂", value=2.0, step=0.1, key=uk("heat", "m2"))
             rsgo = 1.0 / sgo if sgo > 0 else 0.3333
             st.info(f"Reciprocal 1/n = {rsgo:.4f} (auto-computed)")
-
+    
     elif heat_type == "Double Ellipsoidal":
         st.subheader("🔷 Double Ellipsoidal Parameters")
         col_de1, col_de2 = st.columns(2)
@@ -414,7 +441,7 @@ with tab_heat:
         with col_de2:
             a_rear = st.number_input("Rear Semi-Axis a_r [m]", value=75.0e-6, format="%.2e", key=uk("heat", "a_rear"))
             f_factor = st.number_input("Front Fraction f_f", value=0.6, step=0.1, min_value=0.0, max_value=1.0, key=uk("heat", "f_factor"))
-
+    
     # Generate heat source function based on type
     if heat_type == "Travelling Gaussian":
         heat_udf = f"""! Travelling Gaussian Heat Source for {project_name}
@@ -453,7 +480,7 @@ FUNCTION TravellingHeatSource(Model, n, t) RESULT(f)
   f = Coeff * EXP(-2.0_dp * r**2 / Alpha**2 - Omega * ABS(z))
 END FUNCTION TravellingHeatSource"""
         heat_proc_name = "TravellingHeatSource"
-
+    
     elif heat_type == "Fixed Gaussian":
         heat_udf = f"""! Fixed Gaussian Heat Source for {project_name}
 FUNCTION FixedHeatSource(Model, n, t) RESULT(f)
@@ -479,7 +506,7 @@ FUNCTION FixedHeatSource(Model, n, t) RESULT(f)
   f = Coeff * EXP(-2.0_dp * r**2 / Alpha**2)
 END FUNCTION FixedHeatSource"""
         heat_proc_name = "FixedHeatSource"
-
+    
     elif heat_type == "Flat-Top (Super-Gaussian)":
         heat_udf = f"""! Super-Gaussian Travelling Heat Source (Flat-Top) for {project_name}
 FUNCTION FlatTopHeatSource(Model, n, t) RESULT(f)
@@ -516,8 +543,8 @@ FUNCTION FlatTopHeatSource(Model, n, t) RESULT(f)
   f = m1**rsgo * sgo * Coeff * EXP(-m2 * r**sgo / Alpha**sgo) / gamma(rsgo)
 END FUNCTION FlatTopHeatSource"""
         heat_proc_name = "FlatTopHeatSource"
-
-    elif heat_type == "Double Ellipsoidal":
+    
+    else:  # Double Ellipsoidal
         heat_udf = f"""! Double Ellipsoidal Heat Source for {project_name}
 FUNCTION DoubleEllipsoidalHeatSource(Model, n, t) RESULT(f)
   USE DefUtils
@@ -557,150 +584,80 @@ FUNCTION DoubleEllipsoidalHeatSource(Model, n, t) RESULT(f)
   END IF
 END FUNCTION DoubleEllipsoidalHeatSource"""
         heat_proc_name = "DoubleEllipsoidalHeatSource"
-
-    else:  # NEW: Custom Gaussian (user provided)
-        heat_udf = f"""! Custom Gaussian Heat Source (user provided) for {project_name}
-FUNCTION GaussianHeatSource(Model, n, t) RESULT(f)
-  USE DefUtils
-  IMPLICIT NONE
-
-  TYPE(Model_t) :: Model
-  INTEGER :: n
-  REAL(KIND=dp) :: t, f
-
-  INTEGER :: timestep, prevtimestep = -1
-  REAL(KIND=dp) :: Alpha, Coeff, xspeed, yspeed,  Dist, &
-      Time, x, y, z, s1, s2,  sper, r, xzero, yzero, Omega
-  TYPE(Mesh_t), POINTER :: Mesh
-  TYPE(ValueList_t), POINTER :: Params
-  LOGICAL :: Found, NewTimestep
-  
-  SAVE Mesh, Params, prevtimestep, time, Alpha, Coeff, xspeed, Dist, &
-        yspeed, xzero, yzero
-  
-  timestep = GetTimestep()
-  NewTimestep = ( timestep /= prevtimestep )
-
-  IF( NewTimestep ) THEN
-    Mesh => GetMesh()
-    Params => Model % Simulation
-    time = GetTime()
-    Alpha = GetCReal(Params,'Heat source width')
-    Coeff = GetCReal(Params,'Heat source coefficient')
-    xspeed = GetCReal(Params,'Heat source speed x')
-    yspeed = GetCReal(Params,'Heat source speed y')
-    Dist = GetCReal(Params,'Heat source distance')
-    xzero = GetCReal(Params,'Heat source initial position x', Found)
-    yzero = GetCReal(Params,'Heat source initial position y', Found)
-    Omega = GetCReal(Params,'Absorptance of Surface Material')
-    prevtimestep = timestep
-  END IF
-
-  x = Mesh % Nodes % x(n)   
-  y = Mesh % Nodes % y(n)   
-  z = Mesh % Nodes % z(n)   
-
-  s1 = xzero - time * xspeed
-  s2 = yzero + time * yspeed 
-  r = SQRT((x-s1)**2 + (y-s2)**2)   
-  
-  f = Coeff * EXP( -2*r**2 / Alpha**2 )
-  ! Uncomment the line below to include absorption in z-direction:
-  ! f = Coeff * EXP( -2*r**2 / Alpha**2 - Omega * ABS(z))
     
-END FUNCTION GaussianHeatSource"""
-        heat_proc_name = "GaussianHeatSource"
-
     st.code(heat_udf, language="fortran")
 
-# ====================== TAB 3: LOOKUP TABLES (FIXED: store in session state) ======================
+# ====================== TAB 3: LOOKUP TABLES ======================
 with tab_tables:
     st.header("📊 Lookup Tables (.dat files)")
     st.markdown("Tab-separated files for viscosity and specific enthalpy vs. temperature.")
-
-    # We'll define all four tables explicitly, storing each in session_state.
-    # This guarantees they are available during generation.
-
-    # Table 1: Viscosity A
-    with st.expander("Viscosity – Material A", expanded=True):
-        default_visc_a = pd.DataFrame({
+    
+    table_choice = st.selectbox(
+        "Select Table to Edit",
+        ["Viscosity – Material A", "Viscosity – Material B", 
+         "Specific Enthalpy – Material A", "Specific Enthalpy – Material B"],
+        key=uk("table", "select")
+    )
+    
+    # Pre-loaded sample data
+    if "Viscosity – Material A" in table_choice:
+        default_df = pd.DataFrame({
             "Temperature_K": [300.0, 400.0, 500.0, 600.0, 700.0, 800.0, 900.0, 933.5, 1000.0],
             "Viscosity_Pas": [1.2e-3, 1.0e-3, 0.85e-3, 0.7e-3, 0.6e-3, 0.5e-3, 0.4e-3, 0.35e-3, 0.3e-3]
         })
-        visc_a_df = st.data_editor(
-            default_visc_a,
-            num_rows="dynamic",
-            key=uk("table", "visc_a"),
-            column_config={
-                "Temperature_K": st.column_config.NumberColumn("T [K]", min_value=0, format="%.2f"),
-                "Viscosity_Pas": st.column_config.NumberColumn("Viscosity [Pa·s]", format="%.2e")
-            },
-            hide_index=True
-        )
-        st.session_state["visc_a_df"] = visc_a_df
-
-    # Table 2: Viscosity B
-    with st.expander("Viscosity – Material B", expanded=True):
-        default_visc_b = pd.DataFrame({
+        fname = f"mu_{mat_a_name.lower().replace('-', '_')}.dat"
+        col1_name, col2_name = "Temperature_K", "Viscosity_Pas"
+    elif "Viscosity – Material B" in table_choice:
+        default_df = pd.DataFrame({
             "Temperature_K": [300.0, 500.0, 800.0, 1000.0, 1356.6, 1400.0, 1600.0, 1800.0, 2000.0],
             "Viscosity_Pas": [4.0e-3, 3.2e-3, 2.5e-3, 2.0e-3, 1.5e-3, 1.4e-3, 1.2e-3, 1.0e-3, 0.9e-3]
         })
-        visc_b_df = st.data_editor(
-            default_visc_b,
-            num_rows="dynamic",
-            key=uk("table", "visc_b"),
-            column_config={
-                "Temperature_K": st.column_config.NumberColumn("T [K]", min_value=0, format="%.2f"),
-                "Viscosity_Pas": st.column_config.NumberColumn("Viscosity [Pa·s]", format="%.2e")
-            },
-            hide_index=True
-        )
-        st.session_state["visc_b_df"] = visc_b_df
-
-    # Table 3: Enthalpy A
-    with st.expander("Specific Enthalpy – Material A", expanded=True):
-        default_enth_a = pd.DataFrame({
+        fname = f"mu_{mat_b_name.lower().replace('-', '_')}.dat"
+        col1_name, col2_name = "Temperature_K", "Viscosity_Pas"
+    elif "Specific Enthalpy – Material A" in table_choice:
+        default_df = pd.DataFrame({
             "Temperature_K": [300.0, 310.0, 320.0, 400.0, 500.0, 600.0, 700.0, 800.0, 842.71, 850.0, 900.0, 1000.0],
             "Enthalpy_Jkg": [0.0, 8.98e3, 1.80e4, 9.05e4, 1.81e5, 2.72e5, 3.63e5, 4.54e5, 5.16e5, 5.24e5, 6.02e5, 7.50e5]
         })
-        enth_a_df = st.data_editor(
-            default_enth_a,
-            num_rows="dynamic",
-            key=uk("table", "enth_a"),
-            column_config={
-                "Temperature_K": st.column_config.NumberColumn("T [K]", min_value=0, format="%.2f"),
-                "Enthalpy_Jkg": st.column_config.NumberColumn("Enthalpy [J/kg]", format="%.0f")
-            },
-            hide_index=True
-        )
-        st.session_state["enth_a_df"] = enth_a_df
-
-    # Table 4: Enthalpy B
-    with st.expander("Specific Enthalpy – Material B", expanded=True):
-        default_enth_b = pd.DataFrame({
+        fname = f"h_{mat_a_name.lower().replace('-', '_')}.dat"
+        col1_name, col2_name = "Temperature_K", "Enthalpy_Jkg"
+    else:  # Enthalpy B
+        default_df = pd.DataFrame({
             "Temperature_K": [300.0, 500.0, 800.0, 1000.0, 1356.6, 1400.0, 1600.0, 1800.0, 2000.0],
             "Enthalpy_Jkg": [0.0, 1.54e5, 3.08e5, 4.62e5, 6.67e5, 6.88e5, 7.90e5, 8.92e5, 9.94e5]
         })
-        enth_b_df = st.data_editor(
-            default_enth_b,
-            num_rows="dynamic",
-            key=uk("table", "enth_b"),
-            column_config={
-                "Temperature_K": st.column_config.NumberColumn("T [K]", min_value=0, format="%.2f"),
-                "Enthalpy_Jkg": st.column_config.NumberColumn("Enthalpy [J/kg]", format="%.0f")
-            },
-            hide_index=True
-        )
-        st.session_state["enth_b_df"] = enth_b_df
+        fname = f"h_{mat_b_name.lower().replace('-', '_')}.dat"
+        col1_name, col2_name = "Temperature_K", "Enthalpy_Jkg"
+    
+    edited_df = st.data_editor(
+        default_df,
+        num_rows="dynamic",
+        key=uk("table", f"editor_{table_choice.replace(' ', '_')}"),
+        column_config={
+            col1_name: st.column_config.NumberColumn("T [K]", min_value=0, format="%.2f"),
+            col2_name: st.column_config.NumberColumn(
+                "Viscosity [Pa·s]" if "Viscosity" in table_choice else "Enthalpy [J/kg]",
+                format="%.2e" if "Viscosity" in table_choice else "%.0f"
+            )
+        },
+        hide_index=True
+    )
+    
+    csv_content = edited_df.to_csv(sep='\t', index=False, float_format='%.6f')
+    st.download_button(
+        label=f"⬇️ Download {fname}",
+        data=csv_content,
+        file_name=fname,
+        mime="text/tab-separated-values",
+        key=uk("table", f"dl_{table_choice.replace(' ', '_')}")
+    )
 
-    st.info("💾 All tables are automatically saved in session state and will be included in the ZIP download.")
-
-# ====================== TAB 4: PHYSICS & BOUNDARY CONDITIONS ======================
+# ====================== TAB 4: PHYSICS & BOUNDARY CONDITIONS (FIXED ENTITIES + DEFENSIVE MULTISELECTS) ======================
 with tab_physics:
     st.header("⚙️ Physics Settings & Boundary Conditions")
-
+    
     col_p1, col_p2 = st.columns(2)
-
+    
     with col_p1:
         st.subheader("🕐 Time Stepping")
         coord_scaling = st.selectbox(
@@ -713,33 +670,38 @@ with tab_physics:
         n_steps_initial = st.number_input("Steps at initial Δt", value=1, min_value=1, key=uk("phys", "ninit"))
         n_steps_main = st.number_input("Steps at main Δt", value=60, min_value=1, key=uk("phys", "nmain"))
         bdf_order = st.selectbox("BDF Order", [1, 2, 3], index=1, key=uk("phys", "bdf"))
-
+    
     with col_p2:
         st.subheader("📁 Output Settings")
         results_dir = st.text_input("Results Directory", value="./results/", key=uk("phys", "resdir"))
         output_file = st.text_input("Output File Base", value="old.result", key=uk("phys", "outfile"))
         post_file = st.text_input("Post-Processing File", value="a.vtu", key=uk("phys", "postfile"))
         mesh_name = st.text_input("Mesh Database Name", value="Mesh_weld_external", key=uk("phys", "meshname"))
-
+    
     st.divider()
     st.subheader("🔗 Boundary Conditions (Fixed Geometry Entities)")
-
+    
+    # FIXED SOLID NAMES
     st.markdown("🔹 **Solids** (Body assignments):")
     col_s1, col_s2 = st.columns(2)
     with col_s1:
         body1_solid = st.selectbox("Body 1 → Solid", SOLID_NAMES, index=0, key=uk("phys", "body1"))
     with col_s2:
         body2_solid = st.selectbox("Body 2 → Solid", SOLID_NAMES, index=1, key=uk("phys", "body2"))
-
+    
+    # FIXED FACE NAMES - USING DEFENSIVE MULTISELECTS
     st.markdown("🔹 **Boundary Conditions** (select from fixed face list):")
-    bc_fixed_defaults = ["Face_1leftfront", "Face_3frontfront", "Face_4bottomfront", "Face_7bottomback"]
+    
+    # Fixed displacement faces - DEFENSIVE: filter invalid defaults
+    bc_fixed_defaults = ["Face_1leftfront", "Face_3frontfront", "Face_4bottomfront", "Face_7bottomback"]  # FIXED: was Face_8bottomback
     bc_fixed = safe_multiselect(
         "Fixed Displacement Faces (Zero Velocity)",
         FACE_NAMES,
         default=bc_fixed_defaults,
         key=uk("phys", "bcfixed")
     )
-
+    
+    # Convective cooling faces - DEFENSIVE
     bc_conv_defaults = ["Face_2leftback", "Face_5topfront"]
     bc_conv = safe_multiselect(
         "Convective Cooling Faces (h=15 W/m²K, T∞=298K)",
@@ -748,7 +710,8 @@ with tab_physics:
         key=uk("phys", "bcconv")
     )
     htc_value = st.number_input("Heat Transfer Coefficient h [W/m²K]", value=15.0, step=1.0, key=uk("phys", "htc"))
-
+    
+    # Fixed temperature faces - DEFENSIVE
     bc_temp_defaults = ["Face_4bottomfront"]
     bc_temp = safe_multiselect(
         "Fixed Temperature Faces (T = 298 K)",
@@ -756,14 +719,15 @@ with tab_physics:
         default=bc_temp_defaults,
         key=uk("phys", "bctemp")
     )
-
+    
+    # Heat flux face (laser) - single select, no default issue
     heat_face = st.selectbox(
         "Laser Heat Flux Boundary",
         FACE_NAMES,
-        index=4,  # Face_5topfront
+        index=4,  # Default to Face_5topfront (top surface)
         key=uk("phys", "heatface")
     )
-
+    
     st.divider()
     st.subheader("🌡️ Phase Change Settings")
     col_pc1, col_pc2 = st.columns(2)
@@ -773,27 +737,21 @@ with tab_physics:
     with col_pc2:
         phase_model = st.selectbox("Phase Change Model", ["Spatial 2", "Spatial 1", "None"], index=0, key=uk("phys", "phasemodel"))
 
-# ====================== TAB 5: GENERATE FILES (ZIP DOWNLOAD) ======================
+# ====================== TAB 5: GENERATE FILES ======================
 with tab_generate:
     st.header("📥 Generate Complete Elmer Input Files")
-
+    
     if st.button("🔄 Generate All Files", type="primary", use_container_width=True, key=uk("gen", "btn")):
-        # Retrieve all data from session state or current widgets
-        # (the button reruns the script, so widgets are still available)
-
-        # Retrieve table DataFrames from session state (fallback to defaults if missing)
-        visc_a_df = st.session_state.get("visc_a_df", pd.DataFrame({"Temperature_K": [300], "Viscosity_Pas": [1.2e-3]}))
-        visc_b_df = st.session_state.get("visc_b_df", pd.DataFrame({"Temperature_K": [300], "Viscosity_Pas": [4.0e-3]}))
-        enth_a_df = st.session_state.get("enth_a_df", pd.DataFrame({"Temperature_K": [300], "Enthalpy_Jkg": [0]}))
-        enth_b_df = st.session_state.get("enth_b_df", pd.DataFrame({"Temperature_K": [300], "Enthalpy_Jkg": [0]}))
-
-        # Prepare substitution dictionary for .sif
+        # === PREPARE SUBSTITUTION DICTIONARY ===
         coord_val = coord_scaling.split()[0]
         timestep_intervals = f"{n_steps_initial} {n_steps_main}"
         timestep_sizes = f"{dt_initial:.1e} {dt_main:.1e}"
         output_intervals = "1 1"
-
-        # Face name to index conversion
+        
+        # Heat source procedure name
+        heat_proc = heat_proc_name
+        
+        # Convert face names to indices (Face_N → N)
         def face_names_to_indices(face_list):
             indices = []
             for face in face_list:
@@ -801,14 +759,13 @@ with tab_generate:
                 if match:
                     indices.append(match.group(1))
             return " ".join(indices) if indices else "1"
-
+        
         bc_fixed_idx = face_names_to_indices(bc_fixed)
         bc_conv_idx = face_names_to_indices(bc_conv)
         bc_temp_idx = face_names_to_indices(bc_temp)
-        heat_face_match = re.search(r'Face_(\d+)', heat_face)
-        heat_face_idx = heat_face_match.group(1) if heat_face_match else "5"
-
-        # Build .sif content using Template
+        heat_face_idx = re.search(r'Face_(\d+)', heat_face).group(1) if re.search(r'Face_(\d+)', heat_face) else "5"
+        
+        # === BUILD COMPLETE .sif FILE ===
         sif_template = Template(f"""    !Phase change solid-liquid
     !Elmer solver input file for transient solid-liquid phase change with enthalpy formulation
     !Bilayer: {mat_a_name} ({body1_solid}) / {mat_b_name} ({body2_solid})
@@ -840,8 +797,9 @@ with tab_generate:
       Binary Output = Logical True
       Use Mesh Names = True
       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-      ! Coefficients for input into the user defined subroutine {heat_proc_name}
+      ! Coefficients for input into the user defined subroutine {heat_proc}
       ! Parameters for the {heat_type}
+      ! Terms related to Eq. 8 of Kunwar et al, Journal of Materials Science & Technology, 2020 (50), pp. 115-127
       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
       Heat Source Width = Real {beam_radius}
       Heat Source Coefficient = Real {heat_coeff}
@@ -852,20 +810,22 @@ with tab_generate:
       Heat source initial position y = Real {init_y}
       Absorptance of Top Surface Material = Real {absorptance}
       Absorptance of Bottom Surface Material = Real {absorptance}
-""")
-        # Add type-specific parameters
+      """)
+        
+        # Add heat source specific parameters
         if heat_type == "Flat-Top (Super-Gaussian)":
-            sif_template.template += f"""      Super gaussian order n = Real {sgo}
+            sif_template.template += f"""Super gaussian order n = Real {sgo}
       reciproccal of Super gaussian order 1/n = Real {rsgo}
       prefactor within amplitude term = Real {m1}
       prefactor within exponential term = Real {m2}
 """
         elif heat_type == "Double Ellipsoidal":
-            sif_template.template += f"""      Front semi-axis a_f = Real {a_front}
+            sif_template.template += f"""Front semi-axis a_f = Real {a_front}
       Rear semi-axis a_r = Real {a_rear}
       Transverse semi-axis b = Real {b_axis}
       Front fraction f_f = Real {f_factor}
 """
+        
         sif_template.template += f"""      Mesh Levels = 1
     End
 
@@ -895,6 +855,7 @@ with tab_generate:
       Initial condition = 1
     End
     
+    ! Direct solver to be used to prevent numerical divergence errors
     Solver 1
       Equation = Heat Equation
       Procedure = "HeatSolve" "HeatSolver"
@@ -991,6 +952,7 @@ with tab_generate:
 
     Material 1
       Name = "{mat_a_name}"
+      !!!!!!!!!For elasticity + plasticity computation purpose!!!!!!!!!!!!
       Youngs Modulus = Variable vonMises
       Procedure "plasticityMaterialModel" "getPlasticity"
       Isotropic elastic modulus in elastic regime in Pa = Real 68.9e9
@@ -1128,71 +1090,204 @@ with tab_generate:
       Name = "Top Laser Heat Flux"
       Target Boundaries(1) = {heat_face_idx}
       Heat Flux = Variable time
-      Real Procedure "DifferentTypeHeatSource" "{heat_proc_name}"
+      Real Procedure "DifferentTypeHeatSource" "{heat_proc}"
       Save Line = True
     End
 """)
+        
         sif_content = sif_template.substitute()
-
-        # Build ZIP archive
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-            # .sif file
-            zip_file.writestr(sif_filename, sif_content)
-
-            # Fortran UDFs
-            zip_file.writestr(f"getDensity_{mat_a_name}.F90", dens_udf_a)
-            zip_file.writestr(f"getDensity_{mat_b_name}.F90", dens_udf_b)
-            zip_file.writestr(f"getThermalConductivity_{mat_a_name}.F90", cond_udf_a)
-            zip_file.writestr(f"getThermalConductivity_{mat_b_name}.F90", cond_udf_b)
-            zip_file.writestr(f"getThermalExpansivity_{mat_a_name}.F90", cte_udf_a)
-            zip_file.writestr(f"getThermalExpansivity_{mat_b_name}.F90", cte_udf_b)
-            zip_file.writestr("DifferentTypeHeatSource.F90", heat_udf)
-
+        
+        # === PREPARE FORTRAN UDF FILES (from auto-generated strings) ===
+        # Extract UDF content from display areas
+        def extract_udf_code(code_block):
+            """Extract just the function code without markdown formatting"""
+            lines = code_block.split('\n')
+            # Remove first/last empty lines
+            while lines and lines[0].strip() == '':
+                lines.pop(0)
+            while lines and lines[-1].strip() == '':
+                lines.pop()
+            return '\n'.join(lines)
+        
+        dens_f90_a = extract_udf_code(dens_udf_a)
+        cond_f90_a = extract_udf_code(cond_udf_a)
+        cte_f90_a = extract_udf_code(cte_udf_a)
+        dens_f90_b = extract_udf_code(dens_udf_b)
+        cond_f90_b = extract_udf_code(cond_udf_b)
+        cte_f90_b = extract_udf_code(cte_udf_b)
+        heat_f90 = heat_udf
+        
+        # === DISPLAY DOWNLOAD BUTTONS WITH UNIQUE KEYS ===
+        st.success(f"✅ Files generated for project `{project_name}`!")
+        
+        col_dl1, col_dl2, col_dl3 = st.columns(3)
+        
+        with col_dl1:
+            st.download_button(
+                label="📄 Download case.sif",
+                data=sif_content,
+                file_name=sif_filename,
+                mime="text/plain",
+                key=uk("dl", "sif")
+            )
+            st.download_button(
+                label="🔧 getDensity_A.F90",
+                data=dens_f90_a,
+                file_name=f"getDensity_{mat_a_name}.F90",
+                mime="text/plain",
+                key=uk("dl", "dens_a")
+            )
+            st.download_button(
+                label="🔧 getDensity_B.F90",
+                data=dens_f90_b,
+                file_name=f"getDensity_{mat_b_name}.F90",
+                mime="text/plain",
+                key=uk("dl", "dens_b")
+            )
+        
+        with col_dl2:
+            st.download_button(
+                label="🔧 getThermalConductivity_A.F90",
+                data=cond_f90_a,
+                file_name=f"getThermalConductivity_{mat_a_name}.F90",
+                mime="text/plain",
+                key=uk("dl", "cond_a")
+            )
+            st.download_button(
+                label="🔧 getThermalConductivity_B.F90",
+                data=cond_f90_b,
+                file_name=f"getThermalConductivity_{mat_b_name}.F90",
+                mime="text/plain",
+                key=uk("dl", "cond_b")
+            )
+            st.download_button(
+                label="🔧 HeatSource.F90",
+                data=heat_f90,
+                file_name="DifferentTypeHeatSource.F90",
+                mime="text/plain",
+                key=uk("dl", "heat")
+            )
+        
+        with col_dl3:
+            st.download_button(
+                label="🔧 getThermalExpansivity_A.F90",
+                data=cte_f90_a,
+                file_name=f"getThermalExpansivity_{mat_a_name}.F90",
+                mime="text/plain",
+                key=uk("dl", "cte_a")
+            )
+            st.download_button(
+                label="🔧 getThermalExpansivity_B.F90",
+                data=cte_f90_b,
+                file_name=f"getThermalExpansivity_{mat_b_name}.F90",
+                mime="text/plain",
+                key=uk("dl", "cte_b")
+            )
             # Lookup tables
-            zip_file.writestr(
-                f"mu_{mat_a_name.lower().replace('-', '_')}.dat",
-                visc_a_df.to_csv(sep='\t', index=False, float_format='%.6f')
-            )
-            zip_file.writestr(
-                f"mu_{mat_b_name.lower().replace('-', '_')}.dat",
-                visc_b_df.to_csv(sep='\t', index=False, float_format='%.6f')
-            )
-            zip_file.writestr(
-                f"h_{mat_a_name.lower().replace('-', '_')}.dat",
-                enth_a_df.to_csv(sep='\t', index=False, float_format='%.6f')
-            )
-            zip_file.writestr(
-                f"h_{mat_b_name.lower().replace('-', '_')}.dat",
-                enth_b_df.to_csv(sep='\t', index=False, float_format='%.6f')
-            )
-
-        # Provide the ZIP download button
-        st.success(f"✅ All files generated for project `{project_name}`! Click below to download the complete package.")
-        st.download_button(
-            label="📦 Download ALL files as ZIP",
-            data=zip_buffer.getvalue(),
-            file_name=f"{project_name}_elmer_files.zip",
-            mime="application/zip",
-            key="download_all_zip"
-        )
-
-        # Show contents of the ZIP
-        with st.expander("📋 Contents of ZIP file", expanded=False):
-            st.markdown(f"""
-            **`{project_name}_elmer_files.zip`** contains:
-            - `{sif_filename}`
-            - `getDensity_{mat_a_name}.F90`, `getDensity_{mat_b_name}.F90`
-            - `getThermalConductivity_{mat_a_name}.F90`, `getThermalConductivity_{mat_b_name}.F90`
-            - `getThermalExpansivity_{mat_a_name}.F90`, `getThermalExpansivity_{mat_b_name}.F90`
-            - `DifferentTypeHeatSource.F90`
-            - `mu_{mat_a_name.lower().replace('-', '_')}.dat`
-            - `mu_{mat_b_name.lower().replace('-', '_')}.dat`
-            - `h_{mat_a_name.lower().replace('-', '_')}.dat`
-            - `h_{mat_b_name.lower().replace('-', '_')}.dat`
-            """)
-
-        # Compilation instructions
+            for choice, df in [
+                ("Viscosity – Material A", pd.DataFrame({"Temperature_K": [300], "Viscosity_Pas": [1.2e-3]})),
+                ("Viscosity – Material B", pd.DataFrame({"Temperature_K": [300], "Viscosity_Pas": [4.0e-3]})),
+                ("Specific Enthalpy – Material A", pd.DataFrame({"Temperature_K": [300], "Enthalpy_Jkg": [0]})),
+                ("Specific Enthalpy – Material B", pd.DataFrame({"Temperature_K": [300], "Enthalpy_Jkg": [0]}))
+            ]:
+                if "Viscosity" in choice:
+                    mat = mat_a_name if "A" in choice else mat_b_name
+                    fname = f"mu_{mat.lower().replace('-', '_')}.dat"
+                    content = edited_df.to_csv(sep='\t', index=False, float_format='%.6f') if choice == table_choice else df.to_csv(sep='\t', index=False)
+                else:
+                    mat = mat_a_name if "A" in choice else mat_b_name
+                    fname = f"h_{mat.lower().replace('-', '_')}.dat"
+                    content = edited_df.to_csv(sep='\t', index=False, float_format='%.6f') if choice == table_choice else df.to_csv(sep='\t', index=False)
+                
+                st.download_button(
+                    label=f"📊 {fname}",
+                    data=content,
+                    file_name=fname,
+                    mime="text/tab-separated-values",
+                    key=uk("dl", f"table_{choice.replace(' ', '_')}")
+                )
+        
+        # === INSTRUCTIONS ===
         with st.expander("📋 How to Compile & Run", expanded=True):
             st.markdown(f"""
-            **Directory Structure (extract ZIP):**
+            **Directory Structure:**
+            ```
+            {project_name}/
+            ├── {sif_filename}                 # Main Elmer input file
+            ├── {mesh_name}.mesh              # Your externally-supplied mesh
+            ├── {fortran_dir}
+            │   ├── getDensity_{mat_a_name}.F90
+            │   ├── getDensity_{mat_b_name}.F90
+            │   ├── getThermalConductivity_{mat_a_name}.F90
+            │   ├── getThermalConductivity_{mat_b_name}.F90
+            │   ├── getThermalExpansivity_{mat_a_name}.F90
+            │   ├── getThermalExpansivity_{mat_b_name}.F90
+            │   └── DifferentTypeHeatSource.F90
+            ├── {table_dir_visc}
+            │   ├── mu_{mat_a_name.lower().replace('-', '_')}.dat
+            │   └── mu_{mat_b_name.lower().replace('-', '_')}.dat
+            └── {table_dir_enth}
+                ├── h_{mat_a_name.lower().replace('-', '_')}.dat
+                └── h_{mat_b_name.lower().replace('-', '_')}.dat
+            ```
+            
+            **Compilation Steps:**
+            ```bash
+            # 1. Compile Fortran UDFs
+            cd {fortran_dir}
+            elmerfem -c getDensity_{mat_a_name}.F90
+            elmerfem -c getDensity_{mat_b_name}.F90
+            elmerfem -c getThermalConductivity_{mat_a_name}.F90
+            elmerfem -c getThermalConductivity_{mat_b_name}.F90
+            elmerfem -c getThermalExpansivity_{mat_a_name}.F90
+            elmerfem -c getThermalExpansivity_{mat_b_name}.F90
+            elmerfem -c DifferentTypeHeatSource.F90
+            
+            # 2. Link and run Elmer
+            cd ..
+            ElmerSolver {sif_filename}
+            ```
+            
+            **Key Features:**
+            - ✅ **Fixed geometry entities**: Only your specified faces/solids
+            - ✅ **Multiple heat source types**: Travelling Gaussian, Fixed Gaussian, Flat-Top, Double Ellipsoidal
+            - ✅ **Linked UDF system**: Expressions auto-update Fortran code
+            - ✅ **Bulletproof multiselects**: Defensive filtering prevents invalid default errors
+            - ✅ **All widgets have unique keys**: No StreamlitDuplicateElementId or StreamlitAPIException errors
+            - ✅ **Complete .sif generation**: Ready-to-run Elmer input file
+            
+            **Reference:** Kunwar et al., *J. Mater. Sci. Technol.* 50 (2020) 115-127
+            """)
+
+# ====================== FOOTER ======================
+st.markdown("---")
+st.markdown("""
+**💡 Pro Tips:**
+- The **linked UDF system** ensures your expressions and Fortran code stay synchronized
+- **Fixed geometry entities** match exactly with your Mesh_1_dimensions specification
+- **Multiple heat source types** allow flexibility for different welding scenarios
+- **Defensive multiselects** prevent crashes when default values don't match options
+- All widgets have **unique keys** to prevent Streamlit errors in complex apps
+
+**🔗 Resources:**
+- [Elmer FEM Documentation](https://www.elmerfem.org)
+- [Fortran UDF Guide](https://github.com/ElmerCSC/elmerfem/blob/devel/fem/src/modules/DefUtils.F90)
+- [Heat Source Models Reference](https://www.elmerfem.org/forum/viewtopic.php?t=7330)
+""")
+
+# ====================== DEBUG INFO (OPTIONAL) ======================
+if st.checkbox("Show Debug Info", key=uk("debug", "show")):
+    st.json({
+        "project": project_name,
+        "materials": {"A": mat_a_name, "B": mat_b_name},
+        "mesh": mesh_name,
+        "heat_source": heat_type,
+        "timesteps": {"initial": dt_initial, "main": dt_main, "total": n_steps_initial + n_steps_main},
+        "geometry": {"solids": SOLID_NAMES, "faces": FACE_NAMES},
+        "boundary_conditions": {
+            "fixed": bc_fixed,
+            "convective": bc_conv,
+            "fixed_temp": bc_temp,
+            "heat_flux": heat_face
+        }
+    })
