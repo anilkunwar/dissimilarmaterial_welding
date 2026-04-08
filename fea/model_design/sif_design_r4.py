@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Elmer FEM .sif Generator for Dissimilar Material Welding - UPGRADED EDITION
+Elmer FEM .sif Generator for Dissimilar Material Welding - PRODUCTION EDITION
 - ALL HEAT SOURCE TYPES: Travelling Gaussian, Fixed Gaussian, Flat-Top, Double Ellipsoidal, Custom Gaussian
 - FIXED GEOMETRY: Only specified faces/solids from Mesh_1_dimensions
 - LINKED UDF SYSTEM: Expressions auto-update Fortran UDFs
 - BULLETPROOF MULTISELECTS: Defensive filtering prevents invalid default errors
 - COMPLETE DOWNLOAD: ZIP bundling + session state persistence for reliable downloads
+- ERROR-FREE FORMATTING: Pre-computed substitution dictionary prevents KeyError
 """
 
 import streamlit as st
@@ -68,7 +69,6 @@ FACE_NAMES = [
 ]
 
 # ====================== SESSION STATE INITIALIZATION ======================
-# Initialize session state for generated content persistence
 if "generated_content" not in st.session_state:
     st.session_state.generated_content = {}
 
@@ -387,7 +387,6 @@ with tab_heat:
     st.header("🔦 Laser Heat Source Function")
     st.info("✅ **Select from multiple heat source types including Custom Gaussian**")
     
-    # Heat source type selection - ADDED CUSTOM GAUSSIAN OPTION
     heat_type = st.selectbox(
         "Heat Source Type",
         ["Travelling Gaussian", "Fixed Gaussian", "Flat-Top (Super-Gaussian)", 
@@ -395,7 +394,6 @@ with tab_heat:
         key=uk("heat", "type")
     )
     
-    # Common parameters
     col_h1, col_h2 = st.columns(2)
     with col_h1:
         beam_radius = st.number_input("Beam Radius r₀ [m]", value=35.0e-6, format="%.2e", key=uk("heat", "radius"))
@@ -408,7 +406,6 @@ with tab_heat:
         init_y = st.number_input("Initial Y Position [m]", value=0.0, format="%.2e", key=uk("heat", "inity"))
         absorptance = st.number_input("Absorptance Ω [1/m]", value=8.5e7, format="%.2e", key=uk("heat", "absorp"))
     
-    # Type-specific parameters
     if heat_type == "Flat-Top (Super-Gaussian)":
         st.subheader("🔷 Super-Gaussian Parameters")
         col_sg1, col_sg2 = st.columns(2)
@@ -573,7 +570,6 @@ FUNCTION DoubleEllipsoidalHeatSource(Model, n, t) RESULT(f)
 END FUNCTION DoubleEllipsoidalHeatSource"""
         heat_proc_name = "DoubleEllipsoidalHeatSource"
     
-    # ===== CUSTOM GAUSSIAN HEAT SOURCE (FULL EXPANDED VERSION) =====
     else:  # Custom Gaussian (User Provided)
         st.info("🔹 Using expanded GaussianHeatSource with full error handling and optional absorption term")
         heat_udf = f"""!===============================================================================
@@ -662,8 +658,6 @@ FUNCTION GaussianHeatSource(Model, n, t) RESULT(f)
 
   !-----------------------------------------------------------------------------
   ! Compute travelling heat source center position
-  ! Note: s1 = xzero - time*xspeed gives motion in +x direction for positive xspeed
-  !       s2 = yzero + time*yspeed gives motion in +y direction for positive yspeed
   !-----------------------------------------------------------------------------
   s1 = xzero - Time * xspeed
   s2 = yzero + Time * yspeed
@@ -677,8 +671,6 @@ FUNCTION GaussianHeatSource(Model, n, t) RESULT(f)
 
   !-----------------------------------------------------------------------------
   ! Compute Gaussian heat flux distribution
-  ! Base form: f = Coeff * exp(-2*r^2/Alpha^2)
-  ! Optional depth attenuation: -Omega*|z| term for surface absorption
   !-----------------------------------------------------------------------------
   exponent = -2.0_dp * r*r / (Alpha*Alpha)
   
@@ -704,7 +696,6 @@ with tab_tables:
         key=uk("table", "select")
     )
     
-    # Pre-loaded sample data
     if "Viscosity – Material A" in table_choice:
         default_df = pd.DataFrame({
             "Temperature_K": [300.0, 400.0, 500.0, 600.0, 700.0, 800.0, 900.0, 933.5, 1000.0],
@@ -729,7 +720,7 @@ with tab_tables:
         fname = f"h_{mat_a_name.lower().replace('-', '_')}.dat"
         col1_name, col2_name = "Temperature_K", "Enthalpy_Jkg"
         table_key = "enth_a"
-    else:  # Enthalpy B
+    else:
         default_df = pd.DataFrame({
             "Temperature_K": [300.0, 500.0, 800.0, 1000.0, 1356.6, 1400.0, 1600.0, 1800.0, 2000.0],
             "Enthalpy_Jkg": [0.0, 1.54e5, 3.08e5, 4.62e5, 6.67e5, 6.88e5, 7.90e5, 8.92e5, 9.94e5]
@@ -738,7 +729,6 @@ with tab_tables:
         col1_name, col2_name = "Temperature_K", "Enthalpy_Jkg"
         table_key = "enth_b"
     
-    # Store edited DataFrame in session state for persistence
     session_key = f"table_data_{table_key}"
     if session_key not in st.session_state:
         st.session_state[session_key] = default_df.copy()
@@ -757,7 +747,6 @@ with tab_tables:
         hide_index=True
     )
     
-    # Update session state with edited data
     st.session_state[session_key] = edited_df.copy()
     
     csv_content = edited_df.to_csv(sep='\t', index=False, float_format='%.6f')
@@ -848,12 +837,14 @@ with tab_physics:
     with col_pc2:
         phase_model = st.selectbox("Phase Change Model", ["Spatial 2", "Spatial 1", "None"], index=0, key=uk("phys", "phasemodel"))
 
-# ====================== TAB 5: GENERATE FILES (FIXED + ZIP BUNDLING) ======================
+# ====================== TAB 5: GENERATE FILES (KEYERROR-FIXED) ======================
 with tab_generate:
     st.header("📥 Generate Complete Elmer Input Files")
     
     if st.button("🔄 Generate All Files", type="primary", use_container_width=True, key=uk("gen", "btn")):
-        # === PREPARE SUBSTITUTION VALUES ===
+        # === PRE-COMPUTE ALL SUBSTITUTION VALUES INTO DICTIONARY ===
+        # This prevents KeyError by ensuring every {placeholder} has a matching key
+        
         coord_val = coord_scaling.split()[0]
         timestep_intervals = f"{n_steps_initial} {n_steps_main}"
         timestep_sizes = f"{dt_initial:.1e} {dt_main:.1e}"
@@ -874,7 +865,97 @@ with tab_generate:
         bc_temp_idx = face_names_to_indices(bc_temp)
         heat_face_idx = re.search(r'Face_(\d+)', heat_face).group(1) if re.search(r'Face_(\d+)', heat_face) else "5"
         
-        # === BUILD .sif FILE USING .format() TO AVOID BRACE CONFLICTS ===
+        # Pre-compute material name variations for table filenames
+        mat_a_name_lower = mat_a_name.lower().replace('-', '_')
+        mat_b_name_lower = mat_b_name.lower().replace('-', '_')
+        
+        # Pre-compute phase change intervals
+        mat_a_melting_minus = mat_a_melting - mushy_width
+        mat_a_melting_plus = mat_a_melting + mushy_width
+        mat_b_melting_minus = mat_b_melting - mushy_width
+        mat_b_melting_plus = mat_b_melting + mushy_width
+        
+        # Build comprehensive substitution dictionary
+        # EVERY {placeholder} in the template MUST have a matching key here
+        substitutions = {
+            # Project metadata
+            'project_name': project_name,
+            'author': author,
+            'date_str': date_str,
+            
+            # File/directory paths
+            'mesh_name': mesh_name,
+            'results_dir': results_dir,
+            'post_file': post_file,
+            'output_file': output_file,
+            'table_dir_visc': table_dir_visc,
+            'table_dir_enth': table_dir_enth,
+            
+            # Coordinate/time settings
+            'coord_val': coord_val,
+            'output_intervals': output_intervals,
+            'timestep_intervals': timestep_intervals,
+            'timestep_sizes': timestep_sizes,
+            'bdf_order': bdf_order,
+            
+            # Materials
+            'mat_a_name': mat_a_name,
+            'mat_b_name': mat_b_name,
+            'body1_solid': body1_solid,
+            'body2_solid': body2_solid,
+            'mat_a_melting': mat_a_melting,
+            'mat_b_melting': mat_b_melting,
+            'mat_a_name_lower': mat_a_name_lower,
+            'mat_b_name_lower': mat_b_name_lower,
+            'mat_a_melting_minus': mat_a_melting_minus,
+            'mat_a_melting_plus': mat_a_melting_plus,
+            'mat_b_melting_minus': mat_b_melting_minus,
+            'mat_b_melting_plus': mat_b_melting_plus,
+            
+            # Heat source
+            'heat_type': heat_type,
+            'heat_proc': heat_proc,
+            'beam_radius': beam_radius,
+            'heat_coeff': heat_coeff,
+            'speed_x': speed_x,
+            'speed_y': speed_y,
+            'scan_dist': scan_dist,
+            'init_x': init_x,
+            'init_y': init_y,
+            'absorptance': absorptance,
+            
+            # Boundary conditions
+            'bc_fixed_len': len(bc_fixed),
+            'bc_conv_len': len(bc_conv),
+            'bc_temp_len': len(bc_temp),
+            'bc_fixed_idx': bc_fixed_idx,
+            'bc_conv_idx': bc_conv_idx,
+            'bc_temp_idx': bc_temp_idx,
+            'heat_face_idx': heat_face_idx,
+            'htc_value': htc_value,
+            
+            # Phase change
+            'phase_model': phase_model,
+            'latent_check': 'True' if latent_release else 'False',
+        }
+        
+        # Add heat source specific parameters if applicable
+        if heat_type == "Flat-Top (Super-Gaussian)":
+            substitutions.update({
+                'sgo': sgo,
+                'rsgo': rsgo,
+                'm1': m1,
+                'm2': m2,
+            })
+        elif heat_type == "Double Ellipsoidal":
+            substitutions.update({
+                'a_front': a_front,
+                'a_rear': a_rear,
+                'b_axis': b_axis,
+                'f_factor': f_factor,
+            })
+        
+        # === BUILD .sif FILE USING PRE-COMPUTED SUBSTITUTIONS ===
         sif_content = """    !Phase change solid-liquid
     !Elmer solver input file for transient solid-liquid phase change with enthalpy formulation
     !Bilayer: {mat_a_name} ({body1_solid}) / {mat_b_name} ({body2_solid})
@@ -919,19 +1000,7 @@ with tab_generate:
       Heat source initial position y = Real {init_y}
       Absorptance of Top Surface Material = Real {absorptance}
       Absorptance of Bottom Surface Material = Real {absorptance}
-      """.format(
-            mat_a_name=mat_a_name, body1_solid=body1_solid,
-            mat_b_name=mat_b_name, body2_solid=body2_solid,
-            project_name=project_name, author=author, date_str=date_str,
-            mesh_name=mesh_name, results_dir=results_dir,
-            coord_val=coord_val, output_intervals=output_intervals,
-            timestep_intervals=timestep_intervals, timestep_sizes=timestep_sizes,
-            bdf_order=bdf_order, post_file=post_file, output_file=output_file,
-            heat_proc=heat_proc, heat_type=heat_type,
-            beam_radius=beam_radius, heat_coeff=heat_coeff,
-            speed_x=speed_x, speed_y=speed_y, scan_dist=scan_dist,
-            init_x=init_x, init_y=init_y, absorptance=absorptance
-        )
+      """.format(**substitutions)
         
         # Add heat source specific parameters
         if heat_type == "Flat-Top (Super-Gaussian)":
@@ -939,15 +1008,15 @@ with tab_generate:
       reciproccal of Super gaussian order 1/n = Real {rsgo}
       prefactor within amplitude term = Real {m1}
       prefactor within exponential term = Real {m2}
-""".format(sgo=sgo, rsgo=rsgo, m1=m1, m2=m2)
+""".format(**substitutions)
         elif heat_type == "Double Ellipsoidal":
             sif_content += """      Front semi-axis a_f = Real {a_front}
       Rear semi-axis a_r = Real {a_rear}
       Transverse semi-axis b = Real {b_axis}
       Front fraction f_f = Real {f_factor}
-""".format(a_front=a_front, a_rear=a_rear, b_axis=b_axis, f_factor=f_factor)
+""".format(**substitutions)
         
-        # Continue .sif template
+        # Continue .sif template - ALL placeholders now have matching keys in substitutions dict
         sif_content += """      Mesh Levels = 1
     End
 
@@ -1215,28 +1284,7 @@ with tab_generate:
       Real Procedure "DifferentTypeHeatSource" "{heat_proc}"
       Save Line = True
     End
-""".format(
-            phase_model=phase_model,
-            latent_check='True' if latent_release else 'False',
-            table_dir_visc=table_dir_visc,
-            table_dir_enth=table_dir_enth,
-            mat_a_name_lower=mat_a_name.lower().replace('-', '_'),
-            mat_b_name_lower=mat_b_name.lower().replace('-', '_'),
-            mat_a_melting_minus=mat_a_melting - mushy_width,
-            mat_a_melting_plus=mat_a_melting + mushy_width,
-            mat_b_melting_minus=mat_b_melting - mushy_width,
-            mat_b_melting_plus=mat_b_melting + mushy_width,
-            mat_a_melting=mat_a_melting,
-            mat_b_melting=mat_b_melting,
-            bc_fixed_len=len(bc_fixed),
-            bc_conv_len=len(bc_conv),
-            bc_temp_len=len(bc_temp),
-            bc_fixed_idx=bc_fixed_idx,
-            bc_conv_idx=bc_conv_idx,
-            bc_temp_idx=bc_temp_idx,
-            heat_face_idx=heat_face_idx,
-            htc_value=htc_value
-        )
+""".format(**substitutions)
         
         # === PREPARE FORTRAN UDF FILES ===
         def extract_udf_code(code_block):
@@ -1265,7 +1313,6 @@ with tab_generate:
             'heat_f90': heat_f90,
             'mat_a_name': mat_a_name, 'mat_b_name': mat_b_name,
             'table_dir_visc': table_dir_visc, 'table_dir_enth': table_dir_enth,
-            # Store edited table DataFrames
             'visc_a_df': st.session_state.get('table_data_visc_a', pd.DataFrame()),
             'visc_b_df': st.session_state.get('table_data_visc_b', pd.DataFrame()),
             'enth_a_df': st.session_state.get('table_data_enth_a', pd.DataFrame()),
@@ -1347,7 +1394,6 @@ with tab_generate:
             ]:
                 df = st.session_state.generated_content[table_key]
                 if df.empty:
-                    # Fallback to default if not edited
                     if 'Viscosity' in label_prefix:
                         mat = st.session_state.generated_content['mat_a_name'] if 'A' in label_prefix else st.session_state.generated_content['mat_b_name']
                         fname = f"mu_{mat.lower().replace('-', '_')}.dat"
@@ -1380,12 +1426,10 @@ with tab_generate:
         
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-            # .sif file
             zip_file.writestr(
                 st.session_state.generated_content['sif_filename'],
                 st.session_state.generated_content['sif_content']
             )
-            # Fortran UDFs
             zip_file.writestr(
                 f"getDensity_{st.session_state.generated_content['mat_a_name']}.F90",
                 st.session_state.generated_content['dens_f90_a']
@@ -1412,7 +1456,6 @@ with tab_generate:
             )
             zip_file.writestr("DifferentTypeHeatSource.F90", st.session_state.generated_content['heat_f90'])
             
-            # Lookup tables
             for table_key, prefix in [
                 ('visc_a_df', 'mu'), ('visc_b_df', 'mu'),
                 ('enth_a_df', 'h'), ('enth_b_df', 'h')
@@ -1449,11 +1492,11 @@ with tab_generate:
             │   ├── getThermalExpansivity_{mat_b_name}.F90
             │   └── DifferentTypeHeatSource.F90
             ├── {table_dir_visc}
-            │   ├── mu_{mat_a_name.lower().replace('-', '_')}.dat
-            │   └── mu_{mat_b_name.lower().replace('-', '_')}.dat
+            │   ├── mu_{mat_a_name_lower}.dat
+            │   └── mu_{mat_b_name_lower}.dat
             └── {table_dir_enth}
-                ├── h_{mat_a_name.lower().replace('-', '_')}.dat
-                └── h_{mat_b_name.lower().replace('-', '_')}.dat
+                ├── h_{mat_a_name_lower}.dat
+                └── h_{mat_b_name_lower}.dat
             ```
             
             **Compilation Steps:**
@@ -1480,7 +1523,8 @@ with tab_generate:
             - ✅ **Bulletproof multiselects**: Defensive filtering prevents invalid default errors
             - ✅ **Session state persistence**: Downloads work reliably after generation
             - ✅ **ZIP bundling**: One-click download of all project files
-            - ✅ **Complete .sif generation**: Ready-to-run Elmer input file with proper brace escaping
+            - ✅ **KeyError-proof formatting**: Pre-computed substitution dictionary prevents missing placeholder errors
+            - ✅ **Complete .sif generation**: Ready-to-run Elmer input file
             
             **Reference:** Kunwar et al., *J. Mater. Sci. Technol.* 50 (2020) 115-127
             """)
@@ -1494,6 +1538,7 @@ st.markdown("""
 - **Custom Gaussian heat source** includes full error handling and optional absorption term
 - **Session state persistence** prevents download button issues after reruns
 - **ZIP bundling** provides the cleanest UX for file distribution
+- **Pre-computed substitutions** prevent KeyError in template formatting
 
 **🔗 Resources:**
 - [Elmer FEM Documentation](https://www.elmerfem.org)
