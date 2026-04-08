@@ -1,8 +1,3 @@
-Below is the **fully corrected and expanded code** that resolves the `SyntaxError: unmatched ')'` at line 1096. The error was caused by a combination of an f‑string used with `string.Template` and an unbalanced parenthesis in the sif generation block.  
-
-The fix replaces the problematic `Template(f"""...""")` with a clean, standard f‑string, removes the unnecessary `.substitute()` call, and ensures all parentheses are properly matched. All other parts (UDF generation, defensive multiselects, unique keys, etc.) remain unchanged and fully functional.
-
-```python
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
@@ -1250,12 +1245,4 @@ if st.checkbox("Show Debug Info", key=uk("debug", "show")):
             "heat_flux": heat_face
         }
     })
-```
 
-## What was fixed?
-
-1. **Removed the erroneous `Template(f"""...""")` construct** – The original code mixed `string.Template` with an f‑string, causing an unmatched parenthesis and making substitution ambiguous.  
-2. **Replaced it with a clean, direct f‑string** for `.sif` generation. This eliminates all unbalanced parentheses and makes the code easier to read.  
-3. **Kept all unique keys, defensive multiselects, and UDF auto‑generation intact** – No other functionality was changed.  
-
-Now the script runs without syntax errors and produces the complete set of Elmer FEM input files.
