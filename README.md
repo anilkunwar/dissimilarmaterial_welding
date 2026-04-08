@@ -41,6 +41,12 @@ Computation of Molar and Specific Enthalpy of Multimaterial Systems
 
 [![meaningtowords](https://img.shields.io/badge/sifdesigner2-streamlit-red)](https://fea-inputfile-design2.streamlit.app/) (input file design, specific names for faces and solids in geometry. download feature needs improvement )
 
+[![meaningtowords](https://img.shields.io/badge/sifdesigner3-streamlit-red)](https://fea-inputfile-design3.streamlit.app/) (input file design, specific names for faces and solids in geometry. download feature needs improvement )
+
+[![meaningtowords](https://img.shields.io/badge/sifdesigner4-streamlit-red)](https://fea-inputfile-design4.streamlit.app/) (input file design, specific names for faces and solids in geometry. download feature needs improvement, multiple heat source models )
+
+[![meaningtowords](https://img.shields.io/badge/sifdesigner5-streamlit-red)](https://fea-inputfile-design5.streamlit.app/) (input file design, specific names for faces and solids in geometry. robust download features available, multiple heat source models )
+
 1. Al-Cu Dissimilar Welding
 2. Ni-YSZ Dissimilar Welding
 
