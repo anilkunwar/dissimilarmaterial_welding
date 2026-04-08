@@ -693,7 +693,7 @@ with tab_physics:
     st.markdown("🔹 **Boundary Conditions** (select from fixed face list):")
     
     # Fixed displacement faces - DEFENSIVE: filter invalid defaults
-    bc_fixed_defaults = ["Face_1leftfront", "Face_3frontfront", "Face_4bottomfront", "Face_7bottomback"]  # FIXED: was Face_8bottomback
+    bc_fixed_defaults = ["Face_1leftfront", "Face_3frontfront", "Face_4bottomfront", "Face_7bottomback"]
     bc_fixed = safe_multiselect(
         "Fixed Displacement Faces (Zero Velocity)",
         FACE_NAMES,
@@ -766,7 +766,11 @@ with tab_generate:
         heat_face_idx = re.search(r'Face_(\d+)', heat_face).group(1) if re.search(r'Face_(\d+)', heat_face) else "5"
         
         # === BUILD COMPLETE .sif FILE ===
-        sif_template = Template(f"""    !Phase change solid-liquid
+        # Initialize SIF content parts
+        sif_parts = []
+        
+        # Header and Simulation block
+        sif_parts.append(f"""    !Phase change solid-liquid
     !Elmer solver input file for transient solid-liquid phase change with enthalpy formulation
     !Bilayer: {mat_a_name} ({body1_solid}) / {mat_b_name} ({body2_solid})
     !Project: {project_name} | Author: {author} | Date: {date_str}
@@ -809,24 +813,25 @@ with tab_generate:
       Heat source initial position x = Real {init_x}
       Heat source initial position y = Real {init_y}
       Absorptance of Top Surface Material = Real {absorptance}
-      Absorptance of Bottom Surface Material = Real {absorptance}
-      """)
+      Absorptance of Bottom Surface Material = Real {absorptance}""")
         
         # Add heat source specific parameters
         if heat_type == "Flat-Top (Super-Gaussian)":
-            sif_template.template += f"""Super gaussian order n = Real {sgo}
+            sif_parts.append(f"""
+      Super gaussian order n = Real {sgo}
       reciproccal of Super gaussian order 1/n = Real {rsgo}
       prefactor within amplitude term = Real {m1}
-      prefactor within exponential term = Real {m2}
-"""
+      prefactor within exponential term = Real {m2}""")
         elif heat_type == "Double Ellipsoidal":
-            sif_template.template += f"""Front semi-axis a_f = Real {a_front}
+            sif_parts.append(f"""
+      Front semi-axis a_f = Real {a_front}
       Rear semi-axis a_r = Real {a_rear}
       Transverse semi-axis b = Real {b_axis}
-      Front fraction f_f = Real {f_factor}
-"""
+      Front fraction f_f = Real {f_factor}""")
         
-        sif_template.template += f"""      Mesh Levels = 1
+        # Continue with rest of SIF
+        sif_parts.append(f"""
+      Mesh Levels = 1
     End
 
     Constants
@@ -1095,10 +1100,11 @@ with tab_generate:
     End
 """)
         
-        sif_content = sif_template.substitute()
+        # Join all parts
+        sif_content = "".join(sif_parts)
         
         # === PREPARE FORTRAN UDF FILES (from auto-generated strings) ===
-        # Extract UDF content from display areas
+        # Extract UDF code from display areas
         def extract_udf_code(code_block):
             """Extract just the function code without markdown formatting"""
             lines = code_block.split('\n')
