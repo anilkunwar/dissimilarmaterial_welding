@@ -2,11 +2,11 @@
 # -*- coding: utf-8 -*-
 """
 Elmer FEM .sif Generator for Dissimilar Material Welding
+- ALL HEAT SOURCE TYPES: Travelling Gaussian, Fixed Gaussian, Flat-Top, Double Ellipsoidal
 - FIXED GEOMETRY: Only specified faces/solids from Mesh_1_dimensions
-- SINGLE HEAT SOURCE: Travelling Gaussian only
 - LINKED UDF SYSTEM: Expressions auto-update Fortran UDFs
 - BULLETPROOF MULTISELECTS: Defensive filtering prevents invalid default errors
-- ALL WIDGETS HAVE UNIQUE KEYS: No StreamlitDuplicateElementId or StreamlitAPIException errors
+- COMPLETE DOWNLOAD: All files ready for Elmer compilation
 """
 
 import streamlit as st
@@ -17,7 +17,7 @@ import re
 
 # Page config
 st.set_page_config(
-    page_title="Elmer Weld Generator - Fixed",
+    page_title="Elmer Weld Generator - Full",
     page_icon="🔥",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -395,16 +395,19 @@ END FUNCTION getThermalExpansivity_{mat_b_name}"""
         
         st.code(cte_udf_b, language="fortran")
 
-# ====================== TAB 2: HEAT SOURCE (FIXED TO TRAVELLING GAUSSIAN) ======================
+# ====================== TAB 2: HEAT SOURCE (ALL TYPES) ======================
 with tab_heat:
     st.header("🔦 Laser Heat Source Function")
-    st.info("✅ **Fixed to Travelling Gaussian** as per your requirements")
+    st.info("✅ **Select from multiple heat source types**")
     
-    # Only one option - Travelling Gaussian
-    heat_type = "Travelling Gaussian"
-    st.success(f"Selected: **{heat_type}**")
+    # Heat source type selection
+    heat_type = st.selectbox(
+        "Heat Source Type",
+        ["Travelling Gaussian", "Fixed Gaussian", "Flat-Top (Super-Gaussian)", "Double Ellipsoidal"],
+        key=uk("heat", "type")
+    )
     
-    # Parameters for Travelling Gaussian
+    # Common parameters
     col_h1, col_h2 = st.columns(2)
     with col_h1:
         beam_radius = st.number_input("Beam Radius r₀ [m]", value=35.0e-6, format="%.2e", key=uk("heat", "radius"))
@@ -417,8 +420,31 @@ with tab_heat:
         init_y = st.number_input("Initial Y Position [m]", value=0.0, format="%.2e", key=uk("heat", "inity"))
         absorptance = st.number_input("Absorptance Ω [1/m]", value=8.5e7, format="%.2e", key=uk("heat", "absorp"))
     
-    # Fixed heat source function
-    heat_udf = f"""! Travelling Gaussian Heat Source for {project_name}
+    # Type-specific parameters
+    if heat_type == "Flat-Top (Super-Gaussian)":
+        st.subheader("🔷 Super-Gaussian Parameters")
+        col_sg1, col_sg2 = st.columns(2)
+        with col_sg1:
+            sgo = st.number_input("Super-Gaussian Order n", value=3.0, step=0.1, key=uk("heat", "sgo"))
+            m1 = st.number_input("Amplitude Prefactor m₁", value=2.0, step=0.1, key=uk("heat", "m1"))
+        with col_sg2:
+            m2 = st.number_input("Exponential Prefactor m₂", value=2.0, step=0.1, key=uk("heat", "m2"))
+            rsgo = 1.0 / sgo if sgo > 0 else 0.3333
+            st.info(f"Reciprocal 1/n = {rsgo:.4f} (auto-computed)")
+    
+    elif heat_type == "Double Ellipsoidal":
+        st.subheader("🔷 Double Ellipsoidal Parameters")
+        col_de1, col_de2 = st.columns(2)
+        with col_de1:
+            a_front = st.number_input("Front Semi-Axis a_f [m]", value=50.0e-6, format="%.2e", key=uk("heat", "a_front"))
+            b_axis = st.number_input("Transverse Semi-Axis b [m]", value=35.0e-6, format="%.2e", key=uk("heat", "b_axis"))
+        with col_de2:
+            a_rear = st.number_input("Rear Semi-Axis a_r [m]", value=75.0e-6, format="%.2e", key=uk("heat", "a_rear"))
+            f_factor = st.number_input("Front Fraction f_f", value=0.6, step=0.1, min_value=0.0, max_value=1.0, key=uk("heat", "f_factor"))
+    
+    # Generate heat source function based on type
+    if heat_type == "Travelling Gaussian":
+        heat_udf = f"""! Travelling Gaussian Heat Source for {project_name}
 FUNCTION TravellingHeatSource(Model, n, t) RESULT(f)
   USE DefUtils
   IMPLICIT NONE
@@ -453,6 +479,111 @@ FUNCTION TravellingHeatSource(Model, n, t) RESULT(f)
   r = SQRT((x - s1)**2 + (y - s2)**2)
   f = Coeff * EXP(-2.0_dp * r**2 / Alpha**2 - Omega * ABS(z))
 END FUNCTION TravellingHeatSource"""
+        heat_proc_name = "TravellingHeatSource"
+    
+    elif heat_type == "Fixed Gaussian":
+        heat_udf = f"""! Fixed Gaussian Heat Source for {project_name}
+FUNCTION FixedHeatSource(Model, n, t) RESULT(f)
+  USE DefUtils
+  IMPLICIT NONE
+  TYPE(Model_t) :: Model; INTEGER :: n; REAL(KIND=dp) :: t, f
+  INTEGER :: timestep, prevtimestep = -1
+  REAL(KIND=dp) :: Alpha, Coeff, Dist0, Time, x, y, z, r
+  TYPE(Mesh_t), POINTER :: Mesh; TYPE(ValueList_t), POINTER :: Params
+  LOGICAL :: Found, NewTimestep
+  SAVE Mesh, Params, prevtimestep, time, Alpha, Coeff, Dist0
+  
+  timestep = GetTimestep(); NewTimestep = (timestep /= prevtimestep)
+  IF(NewTimestep) THEN
+    Mesh => GetMesh(); Params => Model % Simulation; time = GetTime()
+    Alpha = GetCReal(Params, 'Heat source width')
+    Coeff = GetCReal(Params, 'Heat source coefficient')
+    Dist0 = GetCReal(Params, 'Heat source initial position x', Found)
+    prevtimestep = timestep
+  END IF
+  x = Mesh % Nodes % x(n); y = Mesh % Nodes % y(n); z = Mesh % Nodes % z(n)
+  r = x - Dist0
+  f = Coeff * EXP(-2.0_dp * r**2 / Alpha**2)
+END FUNCTION FixedHeatSource"""
+        heat_proc_name = "FixedHeatSource"
+    
+    elif heat_type == "Flat-Top (Super-Gaussian)":
+        heat_udf = f"""! Super-Gaussian Travelling Heat Source (Flat-Top) for {project_name}
+FUNCTION FlatTopHeatSource(Model, n, t) RESULT(f)
+  USE DefUtils
+  IMPLICIT NONE
+  TYPE(Model_t) :: Model; INTEGER :: n; REAL(KIND=dp) :: t, f
+  INTEGER :: timestep, prevtimestep = -1
+  REAL(KIND=dp) :: Alpha, Coeff, xspeed, yspeed, Dist, Time, x, y, z, s1, s2, r
+  REAL(KIND=dp) :: xzero, yzero, sgo, m1, m2, rsgo
+  TYPE(Mesh_t), POINTER :: Mesh; TYPE(ValueList_t), POINTER :: Params
+  LOGICAL :: Found, NewTimestep
+  SAVE Mesh, Params, prevtimestep, time, Alpha, Coeff, xspeed, yspeed, Dist
+  SAVE xzero, yzero, sgo, m1, m2, rsgo
+  
+  timestep = GetTimestep(); NewTimestep = (timestep /= prevtimestep)
+  IF(NewTimestep) THEN
+    Mesh => GetMesh(); Params => Model % Simulation; time = GetTime()
+    Alpha = GetCReal(Params, 'Heat source width')
+    Coeff = GetCReal(Params, 'Heat source coefficient')
+    xspeed = GetCReal(Params, 'Heat source speed x')
+    yspeed = GetCReal(Params, 'Heat source speed y')
+    Dist = GetCReal(Params, 'Heat source distance')
+    xzero = GetCReal(Params, 'Heat source initial position x', Found)
+    yzero = GetCReal(Params, 'Heat source initial position y', Found)
+    sgo = GetCReal(Params, 'Super gaussian order n')
+    rsgo = GetCReal(Params, 'reciproccal of Super gaussian order 1/n')
+    m1 = GetCReal(Params, 'prefactor within amplitude term')
+    m2 = GetCReal(Params, 'prefactor within exponential term')
+    prevtimestep = timestep
+  END IF
+  x = Mesh % Nodes % x(n); y = Mesh % Nodes % y(n); z = Mesh % Nodes % z(n)
+  s1 = xzero + time * xspeed; s2 = yzero + time * yspeed
+  r = SQRT((x - s1)**2 + (y - s2)**2)
+  f = m1**rsgo * sgo * Coeff * EXP(-m2 * r**sgo / Alpha**sgo) / gamma(rsgo)
+END FUNCTION FlatTopHeatSource"""
+        heat_proc_name = "FlatTopHeatSource"
+    
+    else:  # Double Ellipsoidal
+        heat_udf = f"""! Double Ellipsoidal Heat Source for {project_name}
+FUNCTION DoubleEllipsoidalHeatSource(Model, n, t) RESULT(f)
+  USE DefUtils
+  IMPLICIT NONE
+  TYPE(Model_t) :: Model; INTEGER :: n; REAL(KIND=dp) :: t, f
+  INTEGER :: timestep, prevtimestep = -1
+  REAL(KIND=dp) :: Af, Ar, B, Cf, Cr, Ff, Fr, Q, xspeed, yspeed, Dist, Time
+  REAL(KIND=dp) :: x, y, z, s1, s2, xf, xr, yb, zb, ff, fr
+  TYPE(Mesh_t), POINTER :: Mesh; TYPE(ValueList_t), POINTER :: Params
+  LOGICAL :: Found, NewTimestep
+  SAVE Mesh, Params, prevtimestep, time, Af, Ar, B, Cf, Cr, Ff, Fr, Q, xspeed, yspeed, Dist
+  
+  timestep = GetTimestep(); NewTimestep = (timestep /= prevtimestep)
+  IF(NewTimestep) THEN
+    Mesh => GetMesh(); Params => Model % Simulation; time = GetTime()
+    Af = GetCReal(Params, 'Front semi-axis a_f')
+    Ar = GetCReal(Params, 'Rear semi-axis a_r')
+    B = GetCReal(Params, 'Transverse semi-axis b')
+    Cf = 2.0_dp * Af; Cr = 2.0_dp * Ar
+    Ff = GetCReal(Params, 'Front fraction f_f')
+    Fr = 1.0_dp - Ff
+    Q = GetCReal(Params, 'Heat source coefficient')
+    xspeed = GetCReal(Params, 'Heat source speed x')
+    yspeed = GetCReal(Params, 'Heat source speed y')
+    Dist = GetCReal(Params, 'Heat source distance')
+    prevtimestep = timestep
+  END IF
+  x = Mesh % Nodes % x(n); y = Mesh % Nodes % y(n); z = Mesh % Nodes % z(n)
+  s1 = time * xspeed; s2 = time * yspeed
+  xf = x - s1; xr = s1 - x; yb = y - s2; zb = ABS(z)
+  ff = Ff * 6.0_dp * SQRT(3.0_dp) / (PI * Af * B * Cf)
+  fr = Fr * 6.0_dp * SQRT(3.0_dp) / (PI * Ar * B * Cr)
+  IF (xf >= 0.0_dp) THEN
+    f = Q * ff * EXP(-3.0_dp * (xf**2/Af**2 + yb**2/B**2 + zb**2/Cf**2))
+  ELSE
+    f = Q * fr * EXP(-3.0_dp * (xr**2/Ar**2 + yb**2/B**2 + zb**2/Cr**2))
+  END IF
+END FUNCTION DoubleEllipsoidalHeatSource"""
+        heat_proc_name = "DoubleEllipsoidalHeatSource"
     
     st.code(heat_udf, language="fortran")
 
@@ -617,8 +748,8 @@ with tab_generate:
         timestep_sizes = f"{dt_initial:.1e} {dt_main:.1e}"
         output_intervals = "1 1"
         
-        # Heat source procedure name (fixed)
-        heat_proc = "TravellingHeatSource"
+        # Heat source procedure name
+        heat_proc = heat_proc_name
         
         # Convert face names to indices (Face_N → N)
         def face_names_to_indices(face_list):
@@ -667,7 +798,7 @@ with tab_generate:
       Use Mesh Names = True
       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
       ! Coefficients for input into the user defined subroutine {heat_proc}
-      ! Parameters for the TravellingHeatSource
+      ! Parameters for the {heat_type}
       ! Terms related to Eq. 8 of Kunwar et al, Journal of Materials Science & Technology, 2020 (50), pp. 115-127
       !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
       Heat Source Width = Real {beam_radius}
@@ -679,7 +810,23 @@ with tab_generate:
       Heat source initial position y = Real {init_y}
       Absorptance of Top Surface Material = Real {absorptance}
       Absorptance of Bottom Surface Material = Real {absorptance}
-      Mesh Levels = 1
+      """)
+        
+        # Add heat source specific parameters
+        if heat_type == "Flat-Top (Super-Gaussian)":
+            sif_template.template += f"""Super gaussian order n = Real {sgo}
+      reciproccal of Super gaussian order 1/n = Real {rsgo}
+      prefactor within amplitude term = Real {m1}
+      prefactor within exponential term = Real {m2}
+"""
+        elif heat_type == "Double Ellipsoidal":
+            sif_template.template += f"""Front semi-axis a_f = Real {a_front}
+      Rear semi-axis a_r = Real {a_rear}
+      Transverse semi-axis b = Real {b_axis}
+      Front fraction f_f = Real {f_factor}
+"""
+        
+        sif_template.template += f"""      Mesh Levels = 1
     End
 
     Constants
@@ -1103,7 +1250,7 @@ with tab_generate:
             
             **Key Features:**
             - ✅ **Fixed geometry entities**: Only your specified faces/solids
-            - ✅ **Single heat source**: Travelling Gaussian only
+            - ✅ **Multiple heat source types**: Travelling Gaussian, Fixed Gaussian, Flat-Top, Double Ellipsoidal
             - ✅ **Linked UDF system**: Expressions auto-update Fortran code
             - ✅ **Bulletproof multiselects**: Defensive filtering prevents invalid default errors
             - ✅ **All widgets have unique keys**: No StreamlitDuplicateElementId or StreamlitAPIException errors
@@ -1118,11 +1265,29 @@ st.markdown("""
 **💡 Pro Tips:**
 - The **linked UDF system** ensures your expressions and Fortran code stay synchronized
 - **Fixed geometry entities** match exactly with your Mesh_1_dimensions specification
-- **Travelling Gaussian heat source** is the only option (as requested)
+- **Multiple heat source types** allow flexibility for different welding scenarios
 - **Defensive multiselects** prevent crashes when default values don't match options
 - All widgets have **unique keys** to prevent Streamlit errors in complex apps
 
 **🔗 Resources:**
 - [Elmer FEM Documentation](https://www.elmerfem.org)
 - [Fortran UDF Guide](https://github.com/ElmerCSC/elmerfem/blob/devel/fem/src/modules/DefUtils.F90)
+- [Heat Source Models Reference](https://www.elmerfem.org/forum/viewtopic.php?t=7330)
 """)
+
+# ====================== DEBUG INFO (OPTIONAL) ======================
+if st.checkbox("Show Debug Info", key=uk("debug", "show")):
+    st.json({
+        "project": project_name,
+        "materials": {"A": mat_a_name, "B": mat_b_name},
+        "mesh": mesh_name,
+        "heat_source": heat_type,
+        "timesteps": {"initial": dt_initial, "main": dt_main, "total": n_steps_initial + n_steps_main},
+        "geometry": {"solids": SOLID_NAMES, "faces": FACE_NAMES},
+        "boundary_conditions": {
+            "fixed": bc_fixed,
+            "convective": bc_conv,
+            "fixed_temp": bc_temp,
+            "heat_flux": heat_face
+        }
+    })
