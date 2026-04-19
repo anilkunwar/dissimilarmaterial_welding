@@ -1081,18 +1081,17 @@ def create_comparison_visualization(analyzer, selected_indices, customizations=N
     fig.text(0.02, 0.02, f"Generated: {timestamp}", fontsize=8, alpha=0.6)
     
     return fig
-
+#
 def create_interactive_plotly_visualization(df, composition, material_name, fitted_params=None):
     """Create interactive Plotly visualization with enhanced features"""
-    # Create subplots with different layout
     fig = make_subplots(
         rows=3, cols=2,
-        subplot_titles=('Molar Enthalpy', 
-                       'Specific Enthalpy',
-                       'Heat Capacity (dH/dT)',
-                       'Enthalpy Derivative',
-                       'Phase Analysis',
-                       'Data Statistics'),
+        subplot_titles=('Molar Enthalpy',
+                        'Specific Enthalpy',
+                        'Heat Capacity (dH/dT)',
+                        'Enthalpy Derivative',
+                        'Phase Analysis',
+                        'Data Statistics'),
         vertical_spacing=0.12,
         horizontal_spacing=0.15,
         specs=[[{'type': 'scatter'}, {'type': 'scatter'}],
@@ -1100,34 +1099,25 @@ def create_interactive_plotly_visualization(df, composition, material_name, fitt
                [{'type': 'scatter'}, {'type': 'table'}]]
     )
     
-    # Color scheme
     colors = px.colors.qualitative.Set1
     
     # 1. Molar enthalpy
     fig.add_trace(
-        go.Scatter(
-            x=df['Temperature_K'],
-            y=df['Enthalpy_J_mol'],
-            mode='lines+markers',
-            name='Molar Enthalpy',
-            line=dict(color=colors[0], width=3),
-            marker=dict(size=8, symbol='circle', line=dict(width=1, color='white')),
-            hovertemplate='<b>Temperature:</b> %{x:.1f} K<br><b>Enthalpy:</b> %{y:,.0f} J/mol<br><extra></extra>'
-        ),
+        go.Scatter(x=df['Temperature_K'], y=df['Enthalpy_J_mol'],
+                   mode='lines+markers', name='Molar Enthalpy',
+                   line=dict(color=colors[0], width=3),
+                   marker=dict(size=8, symbol='circle', line=dict(width=1, color='white')),
+                   hovertemplate='<b>Temperature:</b> %{x:.1f} K<br><b>Enthalpy:</b> %{y:,.0f} J/mol<br><extra></extra>'),
         row=1, col=1
     )
     
     # 2. Specific enthalpy
     fig.add_trace(
-        go.Scatter(
-            x=df['Temperature_K'],
-            y=df['Enthalpy_J_kg'],
-            mode='lines+markers',
-            name='Specific Enthalpy',
-            line=dict(color=colors[1], width=3),
-            marker=dict(size=8, symbol='square', line=dict(width=1, color='white')),
-            hovertemplate='<b>Temperature:</b> %{x:.1f} K<br><b>Specific Enthalpy:</b> %{y:,.0f} J/kg<br><extra></extra>'
-        ),
+        go.Scatter(x=df['Temperature_K'], y=df['Enthalpy_J_kg'],
+                   mode='lines+markers', name='Specific Enthalpy',
+                   line=dict(color=colors[1], width=3),
+                   marker=dict(size=8, symbol='square', line=dict(width=1, color='white')),
+                   hovertemplate='<b>Temperature:</b> %{x:.1f} K<br><b>Specific Enthalpy:</b> %{y:,.0f} J/kg<br><extra></extra>'),
         row=1, col=2
     )
     
@@ -1136,55 +1126,36 @@ def create_interactive_plotly_visualization(df, composition, material_name, fitt
         dT = df['Temperature_K'].diff()
         dH = df['Enthalpy_J_mol'].diff()
         heat_capacity = dH / dT
-        
-        # Smooth the data
         window_size = min(5, len(heat_capacity) // 10)
-        if window_size > 1:
-            heat_capacity_smooth = heat_capacity.rolling(window=window_size, center=True, min_periods=1).mean()
-        else:
-            heat_capacity_smooth = heat_capacity
+        heat_capacity_smooth = heat_capacity.rolling(window=window_size, center=True, min_periods=1).mean() if window_size > 1 else heat_capacity
         
         fig.add_trace(
-            go.Scatter(
-                x=df['Temperature_K'],
-                y=heat_capacity_smooth,
-                mode='lines+markers',
-                name='Heat Capacity',
-                line=dict(color=colors[2], width=3),
-                marker=dict(size=6, symbol='diamond', line=dict(width=1, color='white')),
-                hovertemplate='<b>Temperature:</b> %{x:.1f} K<br><b>Cₚ:</b> %{y:.3f} J/(mol·K)<br><extra></extra>'
-            ),
+            go.Scatter(x=df['Temperature_K'], y=heat_capacity_smooth,
+                       mode='lines+markers', name='Heat Capacity',
+                       line=dict(color=colors[2], width=3),
+                       marker=dict(size=6, symbol='diamond', line=dict(width=1, color='white')),
+                       hovertemplate='<b>Temperature:</b> %{x:.1f} K<br><b>Cₚ:</b> %{y:.3f} J/(mol·K)<br><extra></extra>'),
             row=2, col=1
         )
-    
+        
     # 4. Enthalpy derivative (second derivative)
     if len(df) > 2:
         d2H = df['Enthalpy_J_mol'].diff().diff()
         dT2 = df['Temperature_K'].diff().diff()
         second_derivative = d2H / dT2
-        
         fig.add_trace(
-            go.Scatter(
-                x=df['Temperature_K'].iloc[2:],
-                y=second_derivative.iloc[2:],
-                mode='lines',
-                name='d²H/dT²',
-                line=dict(color=colors[3], width=2, dash='dash'),
-                hovertemplate='<b>Temperature:</b> %{x:.1f} K<br><b>d²H/dT²:</b> %{y:.3f} J/(mol·K²)<br><extra></extra>'
-            ),
+            go.Scatter(x=df['Temperature_K'].iloc[2:], y=second_derivative.iloc[2:],
+                       mode='lines', name='d²H/dT²',
+                       line=dict(color=colors[3], width=2, dash='dash'),
+                       hovertemplate='<b>Temperature:</b> %{x:.1f} K<br><b>d²H/dT²:</b> %{y:.3f} J/(mol·K²)<br><extra></extra>'),
             row=2, col=2
         )
-    
+        
     # 5. Phase analysis (placeholder)
     fig.add_trace(
-        go.Scatter(
-            x=[df['Temperature_K'].min(), df['Temperature_K'].max()],
-            y=[0, 1],
-            mode='lines',
-            name='Phase Fraction',
-            line=dict(color=colors[4], width=2),
-            visible='legendonly'
-        ),
+        go.Scatter(x=[df['Temperature_K'].min(), df['Temperature_K'].max()], y=[0, 1],
+                   mode='lines', name='Phase Fraction',
+                   line=dict(color=colors[4], width=2), visible='legendonly'),
         row=3, col=1
     )
     
@@ -1199,58 +1170,40 @@ def create_interactive_plotly_visualization(df, composition, material_name, fitt
         ['Composition', ', '.join([f'{k}:{v:.3f}' for k, v in list(composition.items())[:3]])]
     ]
     
-    # FIXED: Properly structured table trace
     fig.add_trace(
         go.Table(
-            header=dict(
-                values=['Property', 'Value'],
-                fill_color='#1E88E5',
-                align='center',
-                font=dict(color='white', size=12)
-            ),
-            cells=dict(
-                values=[[row[0] for row in stats_data], [row[1] for row in stats_data]],
-                fill_color='white',
-                align='center',
-                font=dict(color='black', size=11)
-            ),
+            header=dict(values=['Property', 'Value'], fill_color='#1E88E5', align='center', font=dict(color='white', size=12)),
+            cells=dict(values=[[row[0] for row in stats_data], [row[1] for row in stats_data]],
+                       fill_color='white', align='center', font=dict(color='black', size=11)),
             columnwidth=[0.4, 0.6]
         ),
         row=3, col=2
     )
     
-    # Add melting temperature line if available
+    # FIXED: Robust melting temperature line & annotation
     if fitted_params and 'Tm' in fitted_params:
         Tm = fitted_params['Tm']
-        
         for row in [1, 2]:
             for col in [1, 2]:
-                fig.add_vline(x=Tm, line_dash="dot", line_color="red", 
-                            annotation_text=f"Tm = {Tm:.1f} K", 
-                            annotation_position="top right",
-                            row=row, col=col)
-    
-    # Update layout
+                fig.add_vline(x=Tm, line_dash="dot", line_color="red",
+                              row=row, col=col, exclude_empty_subplots=False)
+                fig.add_annotation(
+                    x=Tm, y=1.0, yref="y domain",
+                    text=f"Tm = {Tm:.1f} K",
+                    showarrow=False,
+                    font=dict(size=10, color="red", family="Arial"),
+                    xanchor="left", yanchor="top",
+                    row=row, col=col
+                )
+                
     fig.update_layout(
-        title=dict(text=f'Enthalpy Analysis - {material_name}', 
-                  font=dict(size=24, color='#2C3E50')),
-        height=1000,
-        showlegend=True,
-        hovermode='x unified',
-        template='plotly_white',
-        plot_bgcolor='rgba(240, 240, 240, 0.5)',
-        paper_bgcolor='white',
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1,
-            bgcolor='rgba(255, 255, 255, 0.8)'
-        )
+        title=dict(text=f'Enthalpy Analysis - {material_name}', font=dict(size=24, color='#2C3E50')),
+        height=1000, showlegend=True, hovermode='x unified',
+        template='plotly_white', plot_bgcolor='rgba(240, 240, 240, 0.5)', paper_bgcolor='white',
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+                    bgcolor='rgba(255, 255, 255, 0.8)')
     )
     
-    # Update axes
     fig.update_xaxes(title_text='Temperature (K)', row=1, col=1)
     fig.update_yaxes(title_text='Enthalpy (J/mol)', row=1, col=1)
     fig.update_xaxes(title_text='Temperature (K)', row=1, col=2)
@@ -1263,6 +1216,8 @@ def create_interactive_plotly_visualization(df, composition, material_name, fitt
     fig.update_yaxes(title_text='Phase Fraction', row=3, col=1)
     
     return fig
+    
+
 
 def create_curve_fitting_visualization(T_data, H_data, T_fit, H_fit, fit_params, residuals, 
                                       r_squared, rmse, material_name, composition, 
