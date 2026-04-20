@@ -4,19 +4,22 @@
 Elmer FEM .sif Generator for Dissimilar Material Welding - ENHANCED PERSISTENCE EDITION
 - ALL HEAT SOURCE TYPES: Travelling Gaussian, Fixed Gaussian, Flat-Top, Double Ellipsoidal, Custom Gaussian
 - FIXED GEOMETRY: Only specified faces/solids from Mesh_1_dimensions
-- LINKED UDF SYSTEM: Expressions auto-update Fortran UDFs
+- LINKED UDF SYSTEM: Expressions auto-update Fortran UDFs including Specific Enthalpy
 - BULLETPROOF MULTISELECTS: Defensive filtering prevents invalid default errors
 - COMPLETE DOWNLOAD: ZIP bundling + persistent session state for all generated files
 - INTELLIGENT CACHING: @st.cache_data prevents redundant re-computation
 - STATE PRESERVATION: Downloads never break session state; all files always accessible
+- EQUATION-BASED ENTHALPY: Optional analytical H(T) model replaces .dat lookup tables
 """
 
 import streamlit as st
 import pandas as pd
+import numpy as np
 from datetime import datetime
 import re
 import zipfile
 import io
+import math
 
 # Page config
 st.set_page_config(
@@ -33,13 +36,15 @@ st.markdown("""
     .stTextArea textarea { font-family: monospace; font-size: 0.85em; }
     .metric-card { background: #f0f2f6; padding: 1rem; border-radius: 0.5rem; }
     .download-section { background: #e8f4fd; padding: 1rem; border-radius: 0.5rem; margin: 0.5rem 0; }
+    .warning-box { background: #fff3cd; border-left: 4px solid #ffc107; padding: 0.75rem 1rem; margin: 0.5rem 0; border-radius: 0.25rem; }
+    .success-box { background: #d4edda; border-left: 4px solid #28a745; padding: 0.75rem 1rem; margin: 0.5rem 0; border-radius: 0.25rem; }
 </style>
 """, unsafe_allow_html=True)
 
 st.title("🔥 Elmer FEM Generator for Dissimilar Welding")
 st.markdown("""
 **Generate complete `.sif` input files + Fortran UDFs + lookup tables for Al-Cu welding simulations.**
-_Mesh file supplied externally with fixed geometry entities._
+_Mesh file supplied externally with fixed geometry entities. Equation-based enthalpy UDF now available._
 """)
 
 # ====================== HELPER: UNIQUE KEY GENERATOR ======================
@@ -86,6 +91,10 @@ if "table_data_enth_b" not in st.session_state:
     st.session_state.table_data_enth_b = None
 if "last_generation_params" not in st.session_state:
     st.session_state.last_generation_params = {}
+if "use_enthalpy_udf_a" not in st.session_state:
+    st.session_state.use_enthalpy_udf_a = False
+if "use_enthalpy_udf_b" not in st.session_state:
+    st.session_state.use_enthalpy_udf_b = False
 
 # ====================== CACHED HELPER FUNCTIONS ======================
 @st.cache_data(ttl=3600)  # Cache for 1 hour
@@ -115,6 +124,27 @@ def face_names_to_indices_cached(face_list: list) -> str:
         if match:
             indices.append(match.group(1))
     return " ".join(indices) if indices else "1"
+
+@st.cache_data(ttl=3600)
+def compute_enthalpy_preview_cached(T: float, alpha: float, beta1: float, beta2: float, 
+                                    beta3: float, gamma: float, T0: float, C: float) -> float:
+    """Cached enthalpy preview calculator for UI display"""
+    linear_term = beta1 * T
+    max_val = T - T0
+    phase_term = beta2 * max_val if max_val > 0.0 else 0.0
+    exp_arg = -gamma * (T - T0)
+    if exp_arg > 700.0:
+        sigmoid_term = 0.0
+    elif exp_arg < -700.0:
+        sigmoid_term = beta3
+    else:
+        exp_val = math.exp(exp_arg)
+        denom = 1.0 + exp_val
+        sigmoid_term = beta3 / denom if denom > 1.0e-300 else beta3
+    bracket_sum = linear_term + phase_term + sigmoid_term + C
+    if abs(alpha) < 1.0e-300:
+        return 0.0
+    return bracket_sum / alpha
 
 # ====================== SIDEBAR: GLOBAL SETTINGS ======================
 st.sidebar.header("⚙️ Global Settings")
@@ -431,6 +461,230 @@ END FUNCTION getThermalConductivity_{mat_b_name}"""
 END FUNCTION getThermalExpansivity_{mat_b_name}"""
         
         st.code(cte_udf_b, language="fortran")
+    
+    # ====================== SPECIFIC ENTHALPY UDF SECTION ======================
+    st.divider()
+    with st.expander("🔥 Specific Enthalpy UDF Configuration", expanded=False):
+        st.info("🔹 **Equation-based enthalpy**: Replace .dat lookup tables with analytical expression")
+        st.markdown("""
+        **Model**: `H(T) = (1/α) × [β₁·T + β₂·max(T-T₀,0) + β₃/(1+exp(-γ·(T-T₀))) + C]`
+        
+        - `α`: Scaling factor [kg/J] — inverse of overall multiplier
+        - `β₁`: Linear sensible heat coefficient [J/(kg·K)]
+        - `β₂`: Phase change contribution [J/(kg·K)]
+        - `β₃`: Sigmoid amplitude for smooth latent heat [J/kg]
+        - `γ`: Transition sharpness [1/K]
+        - `T₀`: Reference/melting temperature [K]
+        - `C`: Constant offset [J/kg]
+        """)
+        
+        enthalpy_col1, enthalpy_col2 = st.columns(2)
+        
+        with enthalpy_col1:
+            st.markdown("### Material A: Enthalpy Coefficients")
+            use_enthalpy_udf_a = st.checkbox("Use equation-based enthalpy (Material A)", 
+                                            value=st.session_state.use_enthalpy_udf_a, key=uk("enthA", "use_udf"))
+            st.session_state.use_enthalpy_udf_a = use_enthalpy_udf_a
+            
+            if use_enthalpy_udf_a:
+                alpha_a = st.number_input("α: Scaling Factor [kg/J]", 
+                                         value=5.13580e-2, format="%.3e", key=uk("enthA", "alpha"))
+                beta1_a = st.number_input("β₁: Linear Coeff [J/(kg·K)]", 
+                                         value=27.9467, format="%.4f", key=uk("enthA", "beta1"))
+                beta2_a = st.number_input("β₂: Phase Coeff [J/(kg·K)]", 
+                                         value=3.5064, format="%.4f", key=uk("enthA", "beta2"))
+                beta3_a = st.number_input("β₃: Sigmoid Amp [J/kg]", 
+                                         value=9995.0, format="%.1f", key=uk("enthA", "beta3"))
+                gamma_a = st.number_input("γ: Transition Sharpness [1/K]", 
+                                         value=0.086717, format="%.6f", key=uk("enthA", "gamma"))
+                T0_a = st.number_input("T₀: Reference Temp [K]", 
+                                      value=1152.03, step=0.01, key=uk("enthA", "T0"))
+                C_a = st.number_input("C: Constant Offset [J/kg]", 
+                                     value=-23485.0, format="%.1f", key=uk("enthA", "C"))
+                
+                # Preview computed enthalpy at key temperatures
+                st.markdown("**Preview Values**:")
+                preview_temps = [298.0, 933.5, 1152.03, 1200.0, 1500.0]
+                preview_data = []
+                for T in preview_temps:
+                    H = compute_enthalpy_preview_cached(T, alpha_a, beta1_a, beta2_a, beta3_a, gamma_a, T0_a, C_a)
+                    preview_data.append({"T [K]": T, "H [J/kg]": f"{H:.2e}"})
+                st.table(pd.DataFrame(preview_data))
+        
+        with enthalpy_col2:
+            st.markdown("### Material B: Enthalpy Coefficients")
+            use_enthalpy_udf_b = st.checkbox("Use equation-based enthalpy (Material B)", 
+                                            value=st.session_state.use_enthalpy_udf_b, key=uk("enthB", "use_udf"))
+            st.session_state.use_enthalpy_udf_b = use_enthalpy_udf_b
+            
+            if use_enthalpy_udf_b:
+                alpha_b = st.number_input("α: Scaling Factor [kg/J]", 
+                                         value=5.13580e-2, format="%.3e", key=uk("enthB", "alpha"))
+                beta1_b = st.number_input("β₁: Linear Coeff [J/(kg·K)]", 
+                                         value=27.9467, format="%.4f", key=uk("enthB", "beta1"))
+                beta2_b = st.number_input("β₂: Phase Coeff [J/(kg·K)]", 
+                                         value=3.5064, format="%.4f", key=uk("enthB", "beta2"))
+                beta3_b = st.number_input("β₃: Sigmoid Amp [J/kg]", 
+                                         value=9995.0, format="%.1f", key=uk("enthB", "beta3"))
+                gamma_b = st.number_input("γ: Transition Sharpness [1/K]", 
+                                         value=0.086717, format="%.6f", key=uk("enthB", "gamma"))
+                T0_b = st.number_input("T₀: Reference Temp [K]", 
+                                      value=1356.6, step=0.01, key=uk("enthB", "T0"))
+                C_b = st.number_input("C: Constant Offset [J/kg]", 
+                                     value=-23485.0, format="%.1f", key=uk("enthB", "C"))
+                
+                # Preview computed enthalpy at key temperatures
+                st.markdown("**Preview Values**:")
+                preview_temps = [298.0, 1000.0, 1356.6, 1400.0, 1800.0]
+                preview_data = []
+                for T in preview_temps:
+                    H = compute_enthalpy_preview_cached(T, alpha_b, beta1_b, beta2_b, beta3_b, gamma_b, T0_b, C_b)
+                    preview_data.append({"T [K]": T, "H [J/kg]": f"{H:.2e}"})
+                st.table(pd.DataFrame(preview_data))
+        
+        # Generate and display the Fortran UDF code
+        st.divider()
+        st.markdown("### 🔧 Auto-Generated Fortran UDF: Specific Enthalpy")
+        
+        enthalpy_udf = f"""!===============================================================================
+! getSpecificEnthalpy.F90 - Equation-based Specific Enthalpy UDF
+! Generated for project: {project_name}
+! Equation: H(T) = (1/alpha) * [beta1*T + beta2*max(T-T0,0) + 
+!          beta3/(1+exp(-gamma*(T-T0))) + const_offset]
+!===============================================================================
+FUNCTION getSpecificEnthalpy(model, n, temp) RESULT(enthalpy)
+  USE DefUtils
+  IMPLICIT NONE
+
+  !-----------------------------------------------------------------------------
+  ! Input/Output arguments
+  !-----------------------------------------------------------------------------
+  TYPE(Model_t) :: model          ! Elmer model structure
+  INTEGER :: n                     ! Node index
+  REAL(KIND=dp) :: temp            ! Current temperature [K]
+  REAL(KIND=dp) :: enthalpy        ! Specific enthalpy result [J/kg]
+
+  !-----------------------------------------------------------------------------
+  ! Local variables
+  !-----------------------------------------------------------------------------
+  INTEGER :: timestep, prevtimestep = -1
+  REAL(KIND=dp) :: alpha, beta1, beta2, beta3, gamma, T0, const_offset
+  REAL(KIND=dp) :: linear_term, phase_term, sigmoid_term, bracket_sum
+  REAL(KIND=dp) :: exp_arg, exp_val, denom, max_val
+  TYPE(ValueList_t), POINTER :: material
+  LOGICAL :: GotIt
+
+  !-----------------------------------------------------------------------------
+  ! Persistent storage (retained between calls for efficiency)
+  !-----------------------------------------------------------------------------
+  SAVE prevtimestep, alpha, beta1, beta2, beta3, gamma, T0, const_offset
+
+  !-----------------------------------------------------------------------------
+  ! Get material parameter handle
+  !-----------------------------------------------------------------------------
+  material => GetMaterial()
+  IF (.NOT. ASSOCIATED(material)) THEN
+    CALL Fatal('getSpecificEnthalpy', 'No material associated with current element')
+  END IF
+
+  !-----------------------------------------------------------------------------
+  ! Check if timestep changed - only re-read parameters when needed
+  !-----------------------------------------------------------------------------
+  timestep = GetTimestep()
+  IF (timestep /= prevtimestep) THEN
+    
+    ! Read enthalpy coefficients from .sif file WITH ERROR HANDLING
+    alpha = GetConstReal(material, 'Enthalpy Scaling Factor alpha', GotIt)
+    IF (.NOT. GotIt) THEN
+      CALL Fatal('getSpecificEnthalpy', 'Enthalpy Scaling Factor alpha not defined in .sif')
+    END IF
+    
+    beta1 = GetConstReal(material, 'Enthalpy Linear Coeff beta1', GotIt)
+    IF (.NOT. GotIt) THEN
+      CALL Fatal('getSpecificEnthalpy', 'Enthalpy Linear Coeff beta1 not defined in .sif')
+    END IF
+    
+    beta2 = GetConstReal(material, 'Enthalpy Phase Coeff beta2', GotIt)
+    IF (.NOT. GotIt) THEN
+      CALL Fatal('getSpecificEnthalpy', 'Enthalpy Phase Coeff beta2 not defined in .sif')
+    END IF
+    
+    beta3 = GetConstReal(material, 'Enthalpy Sigmoid Amp beta3', GotIt)
+    IF (.NOT. GotIt) THEN
+      CALL Fatal('getSpecificEnthalpy', 'Enthalpy Sigmoid Amp beta3 not defined in .sif')
+    END IF
+    
+    gamma = GetConstReal(material, 'Enthalpy Transition Gamma', GotIt)
+    IF (.NOT. GotIt) THEN
+      CALL Fatal('getSpecificEnthalpy', 'Enthalpy Transition Gamma not defined in .sif')
+    END IF
+    
+    T0 = GetConstReal(material, 'Enthalpy Reference Temperature T0', GotIt)
+    IF (.NOT. GotIt) THEN
+      CALL Fatal('getSpecificEnthalpy', 'Enthalpy Reference Temperature T0 not defined in .sif')
+    END IF
+    
+    const_offset = GetConstReal(material, 'Enthalpy Constant Offset C', GotIt)
+    IF (.NOT. GotIt) THEN
+      CALL Fatal('getSpecificEnthalpy', 'Enthalpy Constant Offset C not defined in .sif')
+    END IF
+    
+    prevtimestep = timestep
+    
+  END IF
+
+  !-----------------------------------------------------------------------------
+  ! Compute enthalpy components
+  !-----------------------------------------------------------------------------
+  linear_term = beta1 * temp
+  
+  max_val = temp - T0
+  IF (max_val < 0.0_dp) THEN
+    phase_term = 0.0_dp
+  ELSE
+    phase_term = beta2 * max_val
+  END IF
+  
+  exp_arg = -gamma * (temp - T0)
+  
+  IF (exp_arg > 700.0_dp) THEN
+    sigmoid_term = 0.0_dp
+  ELSE IF (exp_arg < -700.0_dp) THEN
+    sigmoid_term = beta3
+  ELSE
+    exp_val = EXP(exp_arg)
+    denom = 1.0_dp + exp_val
+    IF (denom < 1.0e-300_dp) THEN
+      sigmoid_term = beta3
+    ELSE
+      sigmoid_term = beta3 / denom
+    END IF
+  END IF
+  
+  bracket_sum = linear_term + phase_term + sigmoid_term + const_offset
+  
+  IF (ABS(alpha) < 1.0e-300_dp) THEN
+    CALL Fatal('getSpecificEnthalpy', 'Enthalpy scaling factor alpha is zero or near-zero')
+  END IF
+  enthalpy = bracket_sum / alpha
+  
+  ! Optional sanity check
+  IF (enthalpy < -1.0e10_dp .OR. enthalpy > 1.0e10_dp) THEN
+    CALL Warn('getSpecificEnthalpy', 'Enthalpy value out of expected range')
+  END IF
+  
+END FUNCTION getSpecificEnthalpy"""
+        
+        st.code(enthalpy_udf, language="fortran")
+        
+        # Download button for the UDF
+        st.download_button(
+            label="⬇️ Download getSpecificEnthalpy.F90",
+            data=enthalpy_udf,
+            file_name="getSpecificEnthalpy.F90",
+            mime="text/plain",
+            key=uk("enth", "download_udf")
+        )
 
 # ====================== TAB 2: HEAT SOURCE (ALL TYPES + CUSTOM GAUSSIAN) ======================
 with tab_heat:
@@ -830,6 +1084,15 @@ with tab_tables:
         mime="text/tab-separated-values",
         key=uk("table", f"dl_{table_choice.replace(' ', '_')}")
     )
+    
+    # Show note about equation-based enthalpy option
+    if "Specific Enthalpy" in table_choice:
+        mat_is_a = "A" in table_choice
+        use_udf = st.session_state.use_enthalpy_udf_a if mat_is_a else st.session_state.use_enthalpy_udf_b
+        if use_udf:
+            st.markdown('<div class="success-box">✅ Equation-based enthalpy UDF is enabled for this material. The .dat table below is for reference only and will not be used in the generated .sif file.</div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="warning-box">⚠️ Using .dat lookup table for enthalpy. Enable equation-based UDF in Materials tab for analytical H(T) model.</div>', unsafe_allow_html=True)
 
 # ====================== TAB 4: PHYSICS & BOUNDARY CONDITIONS ======================
 with tab_physics:
@@ -993,6 +1256,15 @@ with tab_generate:
                 mime="text/plain",
                 key="dl_cte_b_persistent"
             )
+            # Add enthalpy UDF download if enabled
+            if gc.get('use_enthalpy_udf_a', False) or gc.get('use_enthalpy_udf_b', False):
+                st.download_button(
+                    label="🔧 getSpecificEnthalpy.F90",
+                    data=gc['enth_udf'],
+                    file_name="getSpecificEnthalpy.F90",
+                    mime="text/plain",
+                    key="dl_enth_udf_persistent"
+                )
             # Lookup tables from persistent session state
             for table_key, label_prefix, fname_prefix in [
                 ('visc_a_df', 'Viscosity – Material A', 'mu'),
@@ -1036,6 +1308,10 @@ with tab_generate:
             zip_file.writestr(f"getThermalExpansivity_{gc['mat_a_name']}.F90", gc['cte_f90_a'])
             zip_file.writestr(f"getThermalExpansivity_{gc['mat_b_name']}.F90", gc['cte_f90_b'])
             zip_file.writestr("DifferentTypeHeatSource.F90", gc['heat_f90'])
+            
+            # Add enthalpy UDF if enabled
+            if gc.get('use_enthalpy_udf_a', False) or gc.get('use_enthalpy_udf_b', False):
+                zip_file.writestr("getSpecificEnthalpy.F90", gc['enth_udf'])
             
             for table_key, prefix in [
                 ('visc_a_df', 'mu'), ('visc_b_df', 'mu'),
@@ -1319,11 +1595,30 @@ with tab_generate:
     Real
       include {table_dir_visc}mu_{mat_a_name_lower}.dat
     End
-      Specific Enthalpy = Variable Temperature
+""".format(**substitutions)
+        
+        # === SPECIFIC ENTHALPY SECTION FOR MATERIAL A ===
+        if use_enthalpy_udf_a:
+            sif_content += f"""      Specific Enthalpy = Variable Temperature
+    Procedure "getSpecificEnthalpy" "getSpecificEnthalpy"
+    Enthalpy Scaling Factor alpha = Real {alpha_a}
+    Enthalpy Linear Coeff beta1 = Real {beta1_a}
+    Enthalpy Phase Coeff beta2 = Real {beta2_a}
+    Enthalpy Sigmoid Amp beta3 = Real {beta3_a}
+    Enthalpy Transition Gamma = Real {gamma_a}
+    Enthalpy Reference Temperature T0 = Real {T0_a}
+    Enthalpy Constant Offset C = Real {C_a}
+  End
+"""
+        else:
+            sif_content += f"""      Specific Enthalpy = Variable Temperature
     Real
       include {table_dir_enth}h_{mat_a_name_lower}.dat
     End
-      Phase Change Intervals(2,1) = {mat_a_melting_minus} {mat_a_melting_plus}
+"""
+        
+        # Continue Material 1 block
+        sif_content += """      Phase Change Intervals(2,1) = {mat_a_melting_minus} {mat_a_melting_plus}
       Compressibility Model = Incompressible
       Reference Pressure = 0
       Specific Heat Ratio = 1.4
@@ -1363,11 +1658,30 @@ with tab_generate:
     Real
       include {table_dir_visc}mu_{mat_b_name_lower}.dat
     End
-      Specific Enthalpy = Variable Temperature
+""".format(**substitutions)
+        
+        # === SPECIFIC ENTHALPY SECTION FOR MATERIAL B ===
+        if use_enthalpy_udf_b:
+            sif_content += f"""      Specific Enthalpy = Variable Temperature
+    Procedure "getSpecificEnthalpy" "getSpecificEnthalpy"
+    Enthalpy Scaling Factor alpha = Real {alpha_b}
+    Enthalpy Linear Coeff beta1 = Real {beta1_b}
+    Enthalpy Phase Coeff beta2 = Real {beta2_b}
+    Enthalpy Sigmoid Amp beta3 = Real {beta3_b}
+    Enthalpy Transition Gamma = Real {gamma_b}
+    Enthalpy Reference Temperature T0 = Real {T0_b}
+    Enthalpy Constant Offset C = Real {C_b}
+  End
+"""
+        else:
+            sif_content += f"""      Specific Enthalpy = Variable Temperature
     Real
       include {table_dir_enth}h_{mat_b_name_lower}.dat
     End
-      Phase Change Intervals(2,1) = {mat_b_melting_minus} {mat_b_melting_plus}
+"""
+        
+        # Finish Material 2 block
+        sif_content += """      Phase Change Intervals(2,1) = {mat_b_melting_minus} {mat_b_melting_plus}
       Compressibility Model = Incompressible
       Reference Pressure = 0
       Specific Heat Ratio = 1.4
@@ -1453,6 +1767,9 @@ with tab_generate:
         cte_f90_b = extract_udf_code_cached(cte_udf_b)
         heat_f90 = heat_udf  # Already clean
         
+        # === PREPARE ENTHALPY UDF ===
+        enth_udf = enthalpy_udf  # Already generated in Materials tab
+        
         # === STORE ALL GENERATED CONTENT IN SESSION STATE (CRITICAL FOR PERSISTENCE) ===
         st.session_state.generated_content = {
             'sif_content': sif_content,
@@ -1461,6 +1778,9 @@ with tab_generate:
             'cond_f90_a': cond_f90_a, 'cond_f90_b': cond_f90_b,
             'cte_f90_a': cte_f90_a, 'cte_f90_b': cte_f90_b,
             'heat_f90': heat_f90,
+            'enth_udf': enth_udf,
+            'use_enthalpy_udf_a': use_enthalpy_udf_a,
+            'use_enthalpy_udf_b': use_enthalpy_udf_b,
             'mat_a_name': mat_a_name, 'mat_b_name': mat_b_name,
             'table_dir_visc': table_dir_visc, 'table_dir_enth': table_dir_enth,
             'project_name': project_name,
@@ -1469,6 +1789,21 @@ with tab_generate:
             'visc_b_df': st.session_state.table_data_visc_b.copy() if st.session_state.table_data_visc_b is not None else pd.DataFrame(),
             'enth_a_df': st.session_state.table_data_enth_a.copy() if st.session_state.table_data_enth_a is not None else pd.DataFrame(),
             'enth_b_df': st.session_state.table_data_enth_b.copy() if st.session_state.table_data_enth_b is not None else pd.DataFrame(),
+            # Store enthalpy coefficients for reference
+            'alpha_a': alpha_a if use_enthalpy_udf_a else None,
+            'beta1_a': beta1_a if use_enthalpy_udf_a else None,
+            'beta2_a': beta2_a if use_enthalpy_udf_a else None,
+            'beta3_a': beta3_a if use_enthalpy_udf_a else None,
+            'gamma_a': gamma_a if use_enthalpy_udf_a else None,
+            'T0_a': T0_a if use_enthalpy_udf_a else None,
+            'C_a': C_a if use_enthalpy_udf_a else None,
+            'alpha_b': alpha_b if use_enthalpy_udf_b else None,
+            'beta1_b': beta1_b if use_enthalpy_udf_b else None,
+            'beta2_b': beta2_b if use_enthalpy_udf_b else None,
+            'beta3_b': beta3_b if use_enthalpy_udf_b else None,
+            'gamma_b': gamma_b if use_enthalpy_udf_b else None,
+            'T0_b': T0_b if use_enthalpy_udf_b else None,
+            'C_b': C_b if use_enthalpy_udf_b else None,
         }
         
         # Store generation timestamp and params for reference
@@ -1476,6 +1811,7 @@ with tab_generate:
         st.session_state.last_generation_params = {
             'heat_type': heat_type, 'mat_a_name': mat_a_name, 'mat_b_name': mat_b_name,
             'beam_radius': beam_radius, 'heat_coeff': heat_coeff,
+            'use_enthalpy_udf_a': use_enthalpy_udf_a, 'use_enthalpy_udf_b': use_enthalpy_udf_b,
         }
         
         st.success(f"✅ Files generated at {st.session_state.generation_timestamp}!")
@@ -1486,6 +1822,9 @@ with tab_generate:
         gc = st.session_state.generated_content
         mat_a_lower = gc.get('mat_a_name', mat_a_name).lower().replace('-', '_') if gc else mat_a_name.lower().replace('-', '_')
         mat_b_lower = gc.get('mat_b_name', mat_b_name).lower().replace('-', '_') if gc else mat_b_name.lower().replace('-', '_')
+        
+        enth_note_a = "✅ Equation-based UDF" if gc.get('use_enthalpy_udf_a', False) else "📊 Lookup table (.dat)"
+        enth_note_b = "✅ Equation-based UDF" if gc.get('use_enthalpy_udf_b', False) else "📊 Lookup table (.dat)"
         
         st.markdown(f"""
         **Directory Structure:**
@@ -1500,13 +1839,14 @@ with tab_generate:
         │   ├── getThermalConductivity_{mat_b_name}.F90
         │   ├── getThermalExpansivity_{mat_a_name}.F90
         │   ├── getThermalExpansivity_{mat_b_name}.F90
-        │   └── DifferentTypeHeatSource.F90
+        │   ├── DifferentTypeHeatSource.F90
+        │   └── getSpecificEnthalpy.F90    # [If equation-based enthalpy enabled]
         ├── {table_dir_visc}
         │   ├── mu_{mat_a_lower}.dat
         │   └── mu_{mat_b_lower}.dat
         └── {table_dir_enth}
-            ├── h_{mat_a_lower}.dat
-            └── h_{mat_b_lower}.dat
+            ├── h_{mat_a_lower}.dat        # [{enth_note_a}]
+            └── h_{mat_b_lower}.dat        # [{enth_note_b}]
         ```
         
         **Compilation Steps:**
@@ -1520,6 +1860,8 @@ with tab_generate:
         elmerfem -c getThermalExpansivity_{mat_a_name}.F90
         elmerfem -c getThermalExpansivity_{mat_b_name}.F90
         elmerfem -c DifferentTypeHeatSource.F90
+        # If using equation-based enthalpy:
+        elmerfem -c getSpecificEnthalpy.F90
         
         # 2. Link and run Elmer
         cd ..
@@ -1530,6 +1872,7 @@ with tab_generate:
         - ✅ **Fixed geometry entities**: Only your specified faces/solids
         - ✅ **5 heat source types**: Including Custom Gaussian with full error handling
         - ✅ **Linked UDF system**: Expressions auto-update Fortran code
+        - ✅ **Equation-based enthalpy**: Optional analytical H(T) model with 7 coefficients
         - ✅ **Bulletproof multiselects**: Defensive filtering prevents invalid default errors
         - ✅ **Persistent session state**: Downloads NEVER break; all files always accessible
         - ✅ **Intelligent caching**: @st.cache_data prevents redundant re-computation
@@ -1549,6 +1892,7 @@ st.markdown("""
 - 📦 **ZIP bundling**: Cleanest UX for distributing complete project files
 - 🔧 **Regenerate anytime**: Click "Regenerate" to update files with new parameters
 - 🎯 **Always visible downloads**: Download section stays accessible in Generate tab
+- 🔥 **Enthalpy UDF**: Enable equation-based model for smoother solver convergence
 
 **🔗 Resources:**
 - [Elmer FEM Documentation](https://www.elmerfem.org)
@@ -1570,6 +1914,12 @@ if st.checkbox("Show Debug Info", key=uk("debug", "show")):
             "convective": bc_conv,
             "fixed_temp": bc_temp,
             "heat_flux": heat_face
+        },
+        "enthalpy_udf": {
+            "material_a_enabled": use_enthalpy_udf_a,
+            "material_b_enabled": use_enthalpy_udf_b,
+            "coefficients_a": {"alpha": alpha_a, "beta1": beta1_a, "beta2": beta2_a, "beta3": beta3_a, "gamma": gamma_a, "T0": T0_a, "C": C_a} if use_enthalpy_udf_a else None,
+            "coefficients_b": {"alpha": alpha_b, "beta1": beta1_b, "beta2": beta2_b, "beta3": beta3_b, "gamma": gamma_b, "T0": T0_b, "C": C_b} if use_enthalpy_udf_b else None,
         },
         "session_state": {
             "has_generated_content": bool(st.session_state.generated_content),
