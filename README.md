@@ -37,7 +37,7 @@ Computation of Molar and Specific Enthalpy of Multimaterial Systems
 
 [![meaningtowords](https://img.shields.io/badge/hcompute7-streamlit-red)](https://enthalpy-computation7.streamlit.app/) (advanced features for multimaterial design, proper visualization)
 
-[![meaningtowords](https://img.shields.io/badge/hcompute8-streamlit-red)](https://enthalpy-computation8.streamlit.app/) (advanced features for multimaterial design, proper visualization, coefficients for fitted specific enthalpy equation)
+[![meaningtowords](https://img.shields.io/badge/hcompute8-streamlit-red)](https://enthalpy-computation8.streamlit.app/) (advanced features for multimaterial design, proper visualization, coefficients for fitted specific enthalpy equation, needs correction)
 
 
 
