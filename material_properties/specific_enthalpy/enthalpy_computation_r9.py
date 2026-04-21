@@ -20,6 +20,7 @@ from plotly.subplots import make_subplots
 import base64
 from io import BytesIO
 import matplotlib
+
 matplotlib.use('Agg')  # Use non-interactive backend
 warnings.filterwarnings('ignore')
 
@@ -29,20 +30,20 @@ if 'simulation_cache' not in st.session_state:
 if 'widget_state' not in st.session_state:
     st.session_state.widget_state = {}
 
-# Page configuration with enhanced settings
+# Page configuration
 st.set_page_config(
-    page_title="🔥 Thermodynamic Enthalpy Analyzer Pro",
+    page_title="🔥 Thermodynamic Enthalpy & Viscosity Analyzer Pro",
     page_icon="🔥",
     layout="wide",
     initial_sidebar_state="expanded",
     menu_items={
         'Get Help': 'https://github.com/thermo-analyzer',
         'Report a bug': "https://github.com/thermo-analyzer/issues",
-        'About': "### Thermodynamic Enthalpy Analyzer Pro v3.0\nAdvanced thermodynamic analysis tool for materials science"
+        'About': "### Thermodynamic Enthalpy & Viscosity Analyzer Pro v4.0\nAdvanced thermodynamic and transport property analysis for materials science"
     }
 )
 
-# Custom CSS for professional styling with enhanced features
+# Custom CSS (same as original)
 st.markdown("""
 <style>
 .main-header {
@@ -247,7 +248,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# COMPREHENSIVE PERIODIC TABLE DATA (118 elements with complete information)
+# Periodic table (same as original)
 PERIODIC_TABLE = {
     'H': ['H', 'Hydrogen', 1, 1.008, 0.0000899, 14.01, 20.28, 1, 1, 's'],
     'HE': ['He', 'Helium', 2, 4.0026, 0.0001785, 0.95, 4.22, 18, 1, 's'],
@@ -369,10 +370,8 @@ PERIODIC_TABLE = {
     'OG': ['Og', 'Oganesson', 118, 294.0, 5.0, 320, 350, 18, 7, 'p']
 }
 
-# Extract molar weights for compatibility
 MOLAR_WEIGHTS = {element: data[3] for element, data in PERIODIC_TABLE.items()}
 
-# Comprehensive colormap list with over 50 options
 COLORMAPS = [
     'viridis', 'plasma', 'inferno', 'magma', 'cividis',
     'twilight', 'twilight_shifted', 'turbo', 'rainbow',
@@ -393,7 +392,6 @@ COLORMAPS = [
 
 class EnthalpyAnalyzer:
     def __init__(self):
-        # Initialize session state if not exists
         if 'results_history' not in st.session_state:
             st.session_state.results_history = []
         if 'fitting_results' not in st.session_state:
@@ -422,53 +420,46 @@ class EnthalpyAnalyzer:
                 'transparent_bg': False,
                 'annotation_fontsize': 9
             }
-        
         script_dir = os.path.dirname(os.path.abspath(__file__))
         self.database_dir = Path(os.path.join(script_dir, "databases"))
         self.database_dir.mkdir(exist_ok=True)
-    
+
     @property
     def results_history(self):
         return st.session_state.results_history
-    
     @results_history.setter
     def results_history(self, value):
         st.session_state.results_history = value
-    
+
     @property
     def fitting_results(self):
         return st.session_state.fitting_results
-    
     @fitting_results.setter
     def fitting_results(self, value):
         st.session_state.fitting_results = value
-    
+
     @property
     def viscosity_fitting_results(self):
         return st.session_state.viscosity_fitting_results
-    
     @viscosity_fitting_results.setter
     def viscosity_fitting_results(self, value):
         st.session_state.viscosity_fitting_results = value
-    
+
     @property
     def history_thumbnails(self):
         return st.session_state.history_thumbnails
-    
     @history_thumbnails.setter
     def history_thumbnails(self, value):
         st.session_state.history_thumbnails = value
-    
+
     @property
     def plot_customizations(self):
         return st.session_state.plot_customizations
-    
     @plot_customizations.setter
     def plot_customizations(self, value):
         st.session_state.plot_customizations = value
-    
+
     def get_available_tdb_files(self):
-        """Retrieve all TDB files from the databases directory"""
         try:
             tdb_files = []
             for ext in ["*.tdb", "*.TDB"]:
@@ -477,9 +468,8 @@ class EnthalpyAnalyzer:
         except Exception as e:
             st.error(f"Error accessing databases directory: {str(e)}")
             return []
-    
+
     def save_uploaded_tdb(self, uploaded_file):
-        """Save uploaded TDB file to databases directory"""
         try:
             save_path = self.database_dir / uploaded_file.name
             if save_path.exists():
@@ -490,12 +480,10 @@ class EnthalpyAnalyzer:
         except Exception as e:
             st.error(f"Error saving TDB file: {str(e)}")
             return None
-    
+
     def calculate_alloy_molar_weight(self, composition):
-        """Calculate molar weight of alloy from composition dictionary"""
         molar_weight = 0.0
         missing_elements = []
-        
         for element, fraction in composition.items():
             if fraction <= 0:
                 continue
@@ -505,17 +493,13 @@ class EnthalpyAnalyzer:
             else:
                 missing_elements.append(element_upper)
                 molar_weight += fraction * 50.0
-        
         if missing_elements:
             st.warning(f"Molar weights not found for elements: {', '.join(missing_elements)}. Using default 50 g/mol.")
-        
         return molar_weight if molar_weight > 0 else 50.0
-    
+
     def convert_composition(self, composition, from_type='mole', to_type='weight'):
-        """Convert composition between mole fraction and weight fraction"""
         if from_type == to_type:
             return composition
-        
         if from_type == 'mole' and to_type == 'weight':
             total_weight = sum(composition[el] * MOLAR_WEIGHTS.get(el.upper(), 50.0) for el in composition)
             converted = {}
@@ -524,7 +508,6 @@ class EnthalpyAnalyzer:
                 molar_weight = MOLAR_WEIGHTS.get(element_upper, 50.0)
                 converted[element] = (fraction * molar_weight) / total_weight
             return converted
-        
         elif from_type == 'weight' and to_type == 'mole':
             total_moles = sum(composition[el] / MOLAR_WEIGHTS.get(el.upper(), 50.0) for el in composition)
             converted = {}
@@ -533,121 +516,59 @@ class EnthalpyAnalyzer:
                 molar_weight = MOLAR_WEIGHTS.get(element_upper, 50.0)
                 converted[element] = (fraction / molar_weight) / total_moles
             return converted
-        
         return composition
-    
+
     def convert_to_specific_enthalpy(self, df, composition):
-        """Convert molar enthalpy to specific enthalpy (J/kg)"""
         if 'Enthalpy_J_mol' not in df.columns:
             raise ValueError("DataFrame must contain 'Enthalpy_J_mol' column")
-        
         molar_weight = self.calculate_alloy_molar_weight(composition)
         df['Enthalpy_J_kg'] = df['Enthalpy_J_mol'] / (molar_weight / 1000.0)
         return df
-    
+
     def sigmoid(self, x, k):
-        """Sigmoid function for enthalpy fitting"""
         kx = np.clip(-k * x, -700, 700)
         return 1 / (1 + np.exp(kx))
-    
+
     def enthalpy_equation(self, T, A1, A2, Tm, DeltaHf, k, H298):
-        """Enthalpy equation for curve fitting with numerical stability"""
         T = np.asarray(T)
         sigmoid_term = DeltaHf * self.sigmoid(T - Tm, k)
         linear_term = A1 * T + A2 * np.maximum(T - Tm, 0)
         return linear_term + sigmoid_term + H298
-    
+
     def specific_enthalpy_equation(self, T, A1, A2, Tm, DeltaHf, k, H298, molar_weight):
-        """Specific enthalpy equation (J/kg)"""
         molar_enthalpy = self.enthalpy_equation(T, A1, A2, Tm, DeltaHf, k, H298)
         return molar_enthalpy / (molar_weight / 1000.0)
-    
+
     # ========== VISCOSITY MODELING METHODS ==========
-    
     def arrhenius_viscosity(self, T, A_l, E_a):
-        """
-        Arrhenius equation for dynamic viscosity in liquid phase
-        μ = A_l * exp(E_a / (R * T))
-        
-        Parameters:
-        T: Temperature (K)
-        A_l: Pre-exponential factor (Pa·s)
-        E_a: Activation energy (J/mol)
-        """
-        T = np.asarray(T)
-        R = 8.314  # Universal gas constant (J/mol·K)
-        return A_l * np.exp(E_a / (R * T))
-    
-    def asymptotic_viscosity(self, T, A_l, E_a, A_ls, phi_s, n=2.5):
-        """
-        Asymptotic viscosity model for mushy zone
-        μ_∞ = μ(T) * (1 - φ_s)^(-n)
-        
-        Parameters:
-        T: Temperature (K)
-        A_l: Pre-exponential factor for liquid (Pa·s)
-        E_a: Activation energy (J/mol)
-        A_ls: Pre-exponential factor for mushy zone (Pa·s)
-        phi_s: Solid fraction (0-1)
-        n: Exponent (typically 2.5)
-        """
-        T = np.asarray(T)
         R = 8.314
-        mu_T = A_ls * np.exp(E_a / (R * T))
+        return A_l * np.exp(E_a / (R * np.asarray(T)))
+
+    def asymptotic_viscosity(self, T, A_l, E_a, A_ls, phi_s, n=2.5):
+        R = 8.314
+        mu_T = A_ls * np.exp(E_a / (R * np.asarray(T)))
         return mu_T * (1 - phi_s) ** (-n)
-    
+
     def solid_fraction(self, T, Tm, delta_T_s=1.0, delta_T_l=2.0):
-        """
-        Calculate solid fraction as a piecewise linear function
-        """
         T = np.asarray(T)
         phi_s = np.zeros_like(T, dtype=float)
-        
-        # Solid region
         mask_solid = T <= Tm - delta_T_s
         phi_s[mask_solid] = 1.0
-        
-        # Mushy zone
         mask_mushy = (T > Tm - delta_T_s) & (T < Tm + delta_T_l)
         if np.any(mask_mushy):
             phi_s[mask_mushy] = (Tm + delta_T_l - T[mask_mushy]) / (delta_T_s + delta_T_l)
-        
-        # Liquid region
         mask_liquid = T >= Tm + delta_T_l
         phi_s[mask_liquid] = 0.0
-        
         return phi_s
-    
+
     def unified_viscosity_model(self, T, A_l, E_a, A_ls, Tm, delta_T_s=1.0, delta_T_l=2.0, n=2.5, mu_solid_eff=1000.0):
-        """
-        Complete viscosity model across all phases
-        
-        Parameters:
-        T: Temperature array (K)
-        A_l: Pre-exponential factor for liquid (Pa·s)
-        E_a: Activation energy (J/mol)
-        A_ls: Pre-exponential factor for mushy zone (Pa·s)
-        Tm: Melting temperature (K)
-        delta_T_s: Solid side mushy zone width (K)
-        delta_T_l: Liquid side mushy zone width (K)
-        n: Asymptotic exponent
-        mu_solid_eff: Effective viscosity in solid phase (Pa·s)
-        """
         T = np.asarray(T)
         R = 8.314
         mu = np.zeros_like(T, dtype=float)
-        
-        # Calculate solid fraction
         phi_s = self.solid_fraction(T, Tm, delta_T_s, delta_T_l)
-        
-        # Liquid phase viscosity (Arrhenius)
         mu_liquid = A_l * np.exp(E_a / (R * T))
-        
-        # Mushy zone viscosity (asymptotic)
         mu_mushy_ref = A_ls * np.exp(E_a / (R * T))
         mu_mushy = mu_mushy_ref * (1 - phi_s) ** (-n)
-        
-        # Combine based on phase
         for i, temp in enumerate(T):
             if temp <= Tm - delta_T_s:
                 mu[i] = mu_solid_eff
@@ -655,138 +576,64 @@ class EnthalpyAnalyzer:
                 mu[i] = mu_liquid[i]
             else:
                 mu[i] = mu_mushy[i]
-        
         return mu, phi_s
-    
+
     def viscosity_equation_for_fitting(self, T, A_l, E_a, A_ls, Tm):
-        """
-        Simplified viscosity equation for curve fitting
-        Uses fixed parameters for mushy zone
-        """
-        mu, _ = self.unified_viscosity_model(T, A_l, E_a, A_ls, Tm, 
-                                              delta_T_s=1.0, delta_T_l=2.0, 
-                                              n=2.5, mu_solid_eff=1000.0)
+        mu, _ = self.unified_viscosity_model(T, A_l, E_a, A_ls, Tm, delta_T_s=1.0, delta_T_l=2.0, n=2.5, mu_solid_eff=1000.0)
         return mu
-    
+
     def create_viscosity_data_from_enthalpy_fit(self, Tm_from_enthalpy, T_range=None, n_points=100):
-        """
-        Generate viscosity data using Tm from enthalpy fitting
-        Uses reference coefficients from Sn-0.7Cu solder
-        """
         if T_range is None:
             T_range = (Tm_from_enthalpy - 100, Tm_from_enthalpy + 100)
-        
         T = np.linspace(T_range[0], T_range[1], n_points)
-        
-        # Reference coefficients for Sn-0.7Cu (from the paper)
-        A_l_ref = 9.79e-4  # Pa·s
-        E_a_ref = 2962.997  # J/mol
-        A_ls_ref = 0.091  # Pa·s
-        
-        # Generate viscosity data
+        A_l_ref = 9.79e-4
+        E_a_ref = 2962.997
+        A_ls_ref = 0.091
         mu, phi_s = self.unified_viscosity_model(T, A_l_ref, E_a_ref, A_ls_ref, Tm_from_enthalpy)
-        
-        df = pd.DataFrame({
-            'Temperature_K': T,
-            'Viscosity_Pa_s': mu,
-            'Solid_Fraction': phi_s
-        })
-        
+        df = pd.DataFrame({'Temperature_K': T, 'Viscosity_Pa_s': mu, 'Solid_Fraction': phi_s})
         return df, (A_l_ref, E_a_ref, A_ls_ref)
-    
+
     def fit_viscosity_data(self, T_data, mu_data, Tm_fixed=None, initial_guess=None):
-        """
-        Fit viscosity data to Arrhenius + asymptotic model
-        
-        Parameters:
-        T_data: Temperature data (K)
-        mu_data: Viscosity data (Pa·s)
-        Tm_fixed: Fixed melting temperature from enthalpy fit (optional)
-        initial_guess: [A_l, E_a, A_ls, Tm] or [A_l, E_a, A_ls] if Tm_fixed
-        """
         R = 8.314
-        
         if Tm_fixed is not None:
-            # Fit with fixed Tm
             def viscosity_fit_func(T, A_l, E_a, A_ls):
                 return self.viscosity_equation_for_fitting(T, A_l, E_a, A_ls, Tm_fixed)
-            
             if initial_guess is None:
                 initial_guess = [1e-3, 3000.0, 0.1]
-            
             lower_bounds = [1e-6, 100.0, 1e-6]
             upper_bounds = [1e-1, 1e5, 10.0]
-            
-            fit_params, pcov = curve_fit(
-                viscosity_fit_func,
-                T_data,
-                mu_data,
-                p0=initial_guess,
-                bounds=(lower_bounds, upper_bounds),
-                method='trf',
-                maxfev=5000
-            )
-            
+            fit_params, pcov = curve_fit(viscosity_fit_func, T_data, mu_data, p0=initial_guess,
+                                         bounds=(lower_bounds, upper_bounds), method='trf', maxfev=5000)
             A_l_fit, E_a_fit, A_ls_fit = fit_params
             Tm_fit = Tm_fixed
-            
         else:
-            # Fit with Tm as parameter
             def viscosity_fit_func_full(T, A_l, E_a, A_ls, Tm):
                 return self.viscosity_equation_for_fitting(T, A_l, E_a, A_ls, Tm)
-            
             if initial_guess is None:
                 Tm_guess = np.median(T_data)
                 initial_guess = [1e-3, 3000.0, 0.1, Tm_guess]
-            
             lower_bounds = [1e-6, 100.0, 1e-6, T_data.min()]
             upper_bounds = [1e-1, 1e5, 10.0, T_data.max()]
-            
-            fit_params, pcov = curve_fit(
-                viscosity_fit_func_full,
-                T_data,
-                mu_data,
-                p0=initial_guess,
-                bounds=(lower_bounds, upper_bounds),
-                method='trf',
-                maxfev=5000
-            )
-            
+            fit_params, pcov = curve_fit(viscosity_fit_func_full, T_data, mu_data, p0=initial_guess,
+                                         bounds=(lower_bounds, upper_bounds), method='trf', maxfev=5000)
             A_l_fit, E_a_fit, A_ls_fit, Tm_fit = fit_params
-        
-        # Calculate statistics
         mu_pred = self.viscosity_equation_for_fitting(T_data, A_l_fit, E_a_fit, A_ls_fit, Tm_fit)
         residuals = mu_data - mu_pred
-        
         ss_res = np.sum(residuals**2)
         ss_tot = np.sum((mu_data - np.mean(mu_data))**2)
         r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
         rmse = np.sqrt(np.mean(residuals**2))
-        
-        # Calculate confidence intervals
         if pcov is not None:
             perr = np.sqrt(np.diag(pcov))
-            confidence_intervals = []
-            for i in range(len(fit_params)):
-                ci = 1.96 * perr[i]
-                confidence_intervals.append((fit_params[i] - ci, fit_params[i] + ci))
+            confidence_intervals = [(fit_params[i] - 1.96*perr[i], fit_params[i] + 1.96*perr[i]) for i in range(len(fit_params))]
         else:
             confidence_intervals = None
-        
         return {
-            'A_l': A_l_fit,
-            'E_a': E_a_fit,
-            'A_ls': A_ls_fit,
-            'Tm': Tm_fit,
-            'r_squared': r_squared,
-            'rmse': rmse,
-            'residuals': residuals,
-            'confidence_intervals': confidence_intervals,
-            'pcov': pcov
+            'A_l': A_l_fit, 'E_a': E_a_fit, 'A_ls': A_ls_fit, 'Tm': Tm_fit,
+            'r_squared': r_squared, 'rmse': rmse, 'residuals': residuals, 'confidence_intervals': confidence_intervals, 'pcov': pcov
         }
-    
+
     def create_thumbnail(self, fig, size=(300, 200)):
-        """Create thumbnail image from matplotlib figure"""
         try:
             thumb_fig = plt.figure(figsize=(size[0]/100, size[1]/100), dpi=100)
             for ax in fig.axes:
@@ -795,21 +642,16 @@ class EnthalpyAnalyzer:
                 new_ax.set_ylabel(ax.get_ylabel(), fontsize=8)
                 new_ax.set_title(ax.get_title(), fontsize=10)
                 for line in ax.lines:
-                    xdata = line.get_xdata()
-                    ydata = line.get_ydata()
-                    new_line, = new_ax.plot(xdata, ydata,
-                                          color=line.get_color(),
-                                          linewidth=line.get_linewidth()/2,
-                                          linestyle=line.get_linestyle(),
-                                          marker=line.get_marker(),
-                                          markersize=line.get_markersize()/2)
+                    new_ax.plot(line.get_xdata(), line.get_ydata(),
+                                color=line.get_color(), linewidth=line.get_linewidth()/2,
+                                linestyle=line.get_linestyle(), marker=line.get_marker(),
+                                markersize=line.get_markersize()/2)
                 for collection in ax.collections:
                     offsets = collection.get_offsets()
                     if len(offsets) > 0:
-                        new_ax.scatter(offsets[:, 0], offsets[:, 1],
-                                     color=collection.get_facecolor(),
-                                     s=collection.get_sizes()/4,
-                                     alpha=collection.get_alpha())
+                        new_ax.scatter(offsets[:,0], offsets[:,1],
+                                       color=collection.get_facecolor(),
+                                       s=collection.get_sizes()/4, alpha=collection.get_alpha())
                 new_ax.grid(True, alpha=0.3)
                 new_ax.tick_params(labelsize=6)
                 break
@@ -822,38 +664,24 @@ class EnthalpyAnalyzer:
         except Exception as e:
             st.warning(f"Could not create thumbnail: {str(e)}")
             return None
-    
+
     def format_dat_file(self, df, composition, metadata=None, columns=None):
-        """Format data in DAT file format with headers and customizable columns"""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        dat_lines = [
-            "# Enthalpy Data File",
-            f"# Generated: {timestamp}",
-            f"# Application: Thermodynamic Enthalpy Analyzer Pro v3.0",
-            f"# Composition: {', '.join([f'{e}={f:.6f}' for e, f in composition.items()])}"
-        ]
-        
+        dat_lines = ["# Enthalpy Data File", f"# Generated: {timestamp}",
+                     f"# Application: Thermodynamic Enthalpy & Viscosity Analyzer Pro v4.0",
+                     f"# Composition: {', '.join([f'{e}={f:.6f}' for e, f in composition.items()])}"]
         if metadata:
             for key, value in metadata.items():
                 dat_lines.append(f"# {key}: {value}")
-        
         dat_lines.append("#" + "-"*80)
-        
         if columns is None:
             columns = ['Temperature_K', 'Enthalpy_J_mol', 'Enthalpy_J_kg']
-        
-        header_mapping = {
-            'Temperature_K': 'Temperature(K)',
-            'Enthalpy_J_mol': 'Enthalpy(J/mol)',
-            'Enthalpy_J_kg': 'Specific_Enthalpy(J/kg)',
-            'Heat_Capacity_J_per_mol_K': 'Heat_Capacity(J/(mol·K))',
-            'Phase': 'Phase'
-        }
-        
+        header_mapping = {'Temperature_K': 'Temperature(K)', 'Enthalpy_J_mol': 'Enthalpy(J/mol)',
+                          'Enthalpy_J_kg': 'Specific_Enthalpy(J/kg)', 'Heat_Capacity_J_per_mol_K': 'Heat_Capacity(J/(mol·K))',
+                          'Phase': 'Phase'}
         header_parts = [header_mapping.get(col, col) for col in columns]
         dat_lines.append("# " + "  ".join([f"{h:<20}" for h in header_parts]))
         dat_lines.append("#" + "-"*80)
-        
         for _, row in df.iterrows():
             line_parts = []
             for col in columns:
@@ -868,15 +696,11 @@ class EnthalpyAnalyzer:
                     else:
                         line_parts.append(f"{value:20}")
             dat_lines.append(" ".join(line_parts))
-        
         return "\n".join(dat_lines)
-    
+
     def create_enhanced_visualization(self, df, composition, material_name="Alloy", customizations=None, Tm=None, show_heat_capacity=True):
-        """Create publication-quality dual-axis visualization with enhanced features and dynamic positioning"""
         if customizations is None:
             customizations = {}
-        
-        # Apply customizations
         curve_thickness = customizations.get('curve_thickness', 2.5)
         box_thickness = customizations.get('box_thickness', 1.0)
         font_size = customizations.get('font_size', 12)
@@ -892,201 +716,100 @@ class EnthalpyAnalyzer:
         label_fontsize = customizations.get('label_fontsize', 12)
         plot_style = customizations.get('plot_style', 'default')
         dpi = customizations.get('dpi', 150)
-        
-        # Apply plot style
         if plot_style != 'default':
             plt.style.use(plot_style)
-        
-        # Create figure with dynamic spacing based on whether heat capacity is shown
         n_subplots = 3 if show_heat_capacity else 2
-        fig, axes = plt.subplots(n_subplots, 1, figsize=(figure_width, figure_height),
-                                dpi=dpi, constrained_layout=True)
-        
+        fig, axes = plt.subplots(n_subplots, 1, figsize=(figure_width, figure_height), dpi=dpi, constrained_layout=True)
         if n_subplots == 2:
             ax1, ax2 = axes
         else:
             ax1, ax2, ax3 = axes
-        
-        # Generate color based on composition hash
         color_hash = hash(str(sorted(composition.items()))) % 256 / 256.0
         if colormap in plt.colormaps():
             cmap = plt.get_cmap(colormap)
             line_color = cmap(color_hash)
         else:
             line_color = plt.cm.viridis(color_hash)
-        
-        # Enhanced marker styles
         markers = ['o', 's', '^', 'v', '<', '>', 'p', '*', 'h', 'H', '+', 'x', 'D']
         marker = markers[int(color_hash * len(markers))]
-        
-        # Calculate statistics for annotations
         delta_H = df['Enthalpy_J_mol'].max() - df['Enthalpy_J_mol'].min()
         avg_dHdT = df['Enthalpy_J_mol'].diff().mean() / df['Temperature_K'].diff().mean()
-        
-        # Molar enthalpy plot with enhanced padding
-        ax1.plot(df['Temperature_K'], df['Enthalpy_J_mol'],
-                color=line_color, linewidth=curve_thickness,
-                marker=marker, markersize=marker_size,
-                markevery=max(1, len(df)//20),
-                label=f'{material_name}',
-                markerfacecolor='white', markeredgewidth=1.5,
-                markeredgecolor=line_color)
-        
-        # Highlight melting temperature if provided
+        ax1.plot(df['Temperature_K'], df['Enthalpy_J_mol'], color=line_color, linewidth=curve_thickness,
+                 marker=marker, markersize=marker_size, markevery=max(1, len(df)//20),
+                 label=f'{material_name}', markerfacecolor='white', markeredgewidth=1.5, markeredgecolor=line_color)
         if Tm is not None:
-            ax1.axvline(Tm, color='red', linestyle='--', linewidth=2.5, alpha=0.8,
-                       label=f'Melting Point: {Tm:.1f} K')
+            ax1.axvline(Tm, color='red', linestyle='--', linewidth=2.5, alpha=0.8, label=f'Melting Point: {Tm:.1f} K')
             ax1.axvspan(Tm-50, Tm+50, alpha=0.15, color='red', label='Melting Region')
-        
-        # Enhanced label placement with increased padding
         ax1.set_xlabel('Temperature (K)', fontsize=label_fontsize, fontweight='bold', labelpad=15)
         ax1.set_ylabel('Enthalpy (J/mol)', fontsize=label_fontsize, fontweight='bold', labelpad=15)
-        ax1.set_title(f'Molar Enthalpy vs Temperature - {material_name}',
-                     fontsize=title_font_size, fontweight='bold', pad=20)
+        ax1.set_title(f'Molar Enthalpy vs Temperature - {material_name}', fontsize=title_font_size, fontweight='bold', pad=20)
         ax1.grid(True, alpha=grid_alpha, linestyle='--', which='both')
-        
-        # SMART legend placement to avoid overlap
-        legend1 = ax1.legend(fontsize=legend_font_size, framealpha=0.95, loc='upper left',
-                            bbox_to_anchor=(0.01, 0.99), shadow=True, borderpad=1,
-                            fancybox=True, edgecolor='black')
+        legend1 = ax1.legend(fontsize=legend_font_size, framealpha=0.95, loc='upper left', bbox_to_anchor=(0.01, 0.99),
+                             shadow=True, borderpad=1, fancybox=True, edgecolor='black')
         legend1.get_frame().set_linewidth(1.5)
-        
-        # Set tick parameters with improved size and padding
         ax1.tick_params(axis='both', which='major', labelsize=tick_size, pad=10)
         ax1.tick_params(axis='both', which='minor', labelsize=tick_size-2, pad=8)
-        
-        # Set box thickness
         for spine in ax1.spines.values():
             spine.set_linewidth(box_thickness)
-        
-        # Specific enthalpy plot with enhanced padding
-        ax2.plot(df['Temperature_K'], df['Enthalpy_J_kg'],
-                color=line_color, linewidth=curve_thickness,
-                marker=marker, markersize=marker_size,
-                markevery=max(1, len(df)//20),
-                label=f'{material_name}',
-                markerfacecolor='white', markeredgewidth=1.5,
-                markeredgecolor=line_color)
-        
+        ax2.plot(df['Temperature_K'], df['Enthalpy_J_kg'], color=line_color, linewidth=curve_thickness,
+                 marker=marker, markersize=marker_size, markevery=max(1, len(df)//20),
+                 label=f'{material_name}', markerfacecolor='white', markeredgewidth=1.5, markeredgecolor=line_color)
         if Tm is not None:
-            ax2.axvline(Tm, color='red', linestyle='--', linewidth=2.5, alpha=0.8,
-                       label=f'Tm = {Tm:.1f} K')
+            ax2.axvline(Tm, color='red', linestyle='--', linewidth=2.5, alpha=0.8, label=f'Tm = {Tm:.1f} K')
             ax2.axvspan(Tm-50, Tm+50, alpha=0.15, color='red')
-        
-        # Enhanced label placement
         ax2.set_xlabel('Temperature (K)', fontsize=label_fontsize, fontweight='bold', labelpad=15)
         ax2.set_ylabel('Specific Enthalpy (J/kg)', fontsize=label_fontsize, fontweight='bold', labelpad=15)
-        ax2.set_title(f'Specific Enthalpy vs Temperature - {material_name}',
-                     fontsize=title_font_size, fontweight='bold', pad=20)
+        ax2.set_title(f'Specific Enthalpy vs Temperature - {material_name}', fontsize=title_font_size, fontweight='bold', pad=20)
         ax2.grid(True, alpha=grid_alpha, linestyle='--', which='both')
-        
-        # SMART legend placement
-        legend2 = ax2.legend(fontsize=legend_font_size, framealpha=0.95, loc='upper left',
-                            bbox_to_anchor=(0.01, 0.99), shadow=True, borderpad=1,
-                            fancybox=True, edgecolor='black')
+        legend2 = ax2.legend(fontsize=legend_font_size, framealpha=0.95, loc='upper left', bbox_to_anchor=(0.01, 0.99),
+                             shadow=True, borderpad=1, fancybox=True, edgecolor='black')
         legend2.get_frame().set_linewidth(1.5)
-        
-        # Set tick parameters
         ax2.tick_params(axis='both', which='major', labelsize=tick_size, pad=10)
         ax2.tick_params(axis='both', which='minor', labelsize=tick_size-2, pad=8)
-        
-        # Set box thickness
         for spine in ax2.spines.values():
             spine.set_linewidth(box_thickness)
-        
-        # Heat capacity plot (dH/dT) if requested
         if show_heat_capacity:
-            # Calculate heat capacity using finite differences
             dT = df['Temperature_K'].diff()
             dH = df['Enthalpy_J_mol'].diff()
             heat_capacity = dH / dT
-            
-            # Smooth the heat capacity data
             window_size = min(5, len(heat_capacity) // 10)
-            if window_size > 1:
-                heat_capacity_smooth = heat_capacity.rolling(window=window_size, center=True, min_periods=1).mean()
-            else:
-                heat_capacity_smooth = heat_capacity
-            
-            ax3.plot(df['Temperature_K'], heat_capacity_smooth,
-                    color='green', linewidth=curve_thickness,
-                    marker='s', markersize=marker_size-2,
-                    markevery=max(1, len(df)//20),
-                    label='Heat Capacity (dH/dT)',
-                    markerfacecolor='white', markeredgewidth=1.5,
-                    markeredgecolor='green')
-            
+            heat_capacity_smooth = heat_capacity.rolling(window=window_size, center=True, min_periods=1).mean() if window_size > 1 else heat_capacity
+            ax3.plot(df['Temperature_K'], heat_capacity_smooth, color='green', linewidth=curve_thickness,
+                     marker='s', markersize=marker_size-2, markevery=max(1, len(df)//20),
+                     label='Heat Capacity (dH/dT)', markerfacecolor='white', markeredgewidth=1.5, markeredgecolor='green')
             if Tm is not None:
                 ax3.axvline(Tm, color='red', linestyle='--', linewidth=2.5, alpha=0.8)
                 ax3.axvspan(Tm-50, Tm+50, alpha=0.15, color='red')
-            
             ax3.set_xlabel('Temperature (K)', fontsize=label_fontsize, fontweight='bold', labelpad=15)
             ax3.set_ylabel('Heat Capacity (J/(mol·K))', fontsize=label_fontsize, fontweight='bold', labelpad=15)
-            ax3.set_title(f'Heat Capacity vs Temperature - {material_name}',
-                         fontsize=title_font_size, fontweight='bold', pad=20)
+            ax3.set_title(f'Heat Capacity vs Temperature - {material_name}', fontsize=title_font_size, fontweight='bold', pad=20)
             ax3.grid(True, alpha=grid_alpha, linestyle='--', which='both')
-            
-            # Add heat capacity statistics
-            max_cp = heat_capacity_smooth.max()
-            min_cp = heat_capacity_smooth.min()
-            avg_cp = heat_capacity_smooth.mean()
-            
-            ax3.legend(fontsize=legend_font_size, framealpha=0.95, loc='upper left',
-                      bbox_to_anchor=(0.01, 0.99), shadow=True, borderpad=1,
-                      fancybox=True, edgecolor='black')
+            ax3.legend(fontsize=legend_font_size, framealpha=0.95, loc='upper left', bbox_to_anchor=(0.01, 0.99), shadow=True, borderpad=1, fancybox=True, edgecolor='black')
             ax3.tick_params(axis='both', which='major', labelsize=tick_size, pad=10)
             ax3.tick_params(axis='both', which='minor', labelsize=tick_size-2, pad=8)
-            
             for spine in ax3.spines.values():
                 spine.set_linewidth(box_thickness)
-        
-        # Add composition annotation with DYNAMIC positioning
         comp_text = ', '.join([f'{e}={f:.4f}' for e, f in list(composition.items())[:4]])
         if len(composition) > 4:
             comp_text += f", ... (+{len(composition)-4} more)"
-        
-        # Position composition text at bottom with buffer
-        fig.text(0.5, 0.01, f'Composition: {comp_text}',
-                ha='center', fontsize=font_size-1, style='italic', alpha=0.9,
-                fontweight='medium', bbox=dict(boxstyle='round,pad=0.5', facecolor='wheat',
-                                              alpha=0.3, edgecolor='goldenrod', linewidth=1))
-        
-        # Add statistics box with DYNAMIC positioning to avoid overlap
+        fig.text(0.5, 0.01, f'Composition: {comp_text}', ha='center', fontsize=font_size-1, style='italic', alpha=0.9,
+                 fontweight='medium', bbox=dict(boxstyle='round,pad=0.5', facecolor='wheat', alpha=0.3, edgecolor='goldenrod', linewidth=1))
         if show_heat_capacity:
-            stats_text = f"""Statistics:
-• ΔH (J/mol): {delta_H:,.0f}
-• Avg dH/dT: {avg_dHdT:.3f} J/(mol·K)
-• Max Cₚ: {max_cp:.3f} J/(mol·K)
-• Min Cₚ: {min_cp:.3f} J/(mol·K)
-• Points: {len(df)}"""
+            max_cp = heat_capacity_smooth.max()
+            min_cp = heat_capacity_smooth.min()
+            stats_text = f"""Statistics:\n• ΔH (J/mol): {delta_H:,.0f}\n• Avg dH/dT: {avg_dHdT:.3f} J/(mol·K)\n• Max Cₚ: {max_cp:.3f} J/(mol·K)\n• Min Cₚ: {min_cp:.3f} J/(mol·K)\n• Points: {len(df)}"""
         else:
-            stats_text = f"""Statistics:
-• ΔH (J/mol): {delta_H:,.0f}
-• Avg dH/dT: {avg_dHdT:.3f} J/(mol·K)
-• Points: {len(df)}"""
-        
-        # Position stats box in top-right corner with padding
-        fig.text(0.98, 0.98, stats_text, transform=fig.transFigure,
-                fontsize=font_size-1, verticalalignment='top', horizontalalignment='right',
-                bbox=dict(boxstyle='round,pad=0.8', facecolor='lightblue', alpha=0.7,
-                         linewidth=1.5, edgecolor='navy'))
-        
-        # Add timestamp
+            stats_text = f"""Statistics:\n• ΔH (J/mol): {delta_H:,.0f}\n• Avg dH/dT: {avg_dHdT:.3f} J/(mol·K)\n• Points: {len(df)}"""
+        fig.text(0.98, 0.98, stats_text, transform=fig.transFigure, fontsize=font_size-1, verticalalignment='top', horizontalalignment='right',
+                 bbox=dict(boxstyle='round,pad=0.8', facecolor='lightblue', alpha=0.7, linewidth=1.5, edgecolor='navy'))
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        fig.text(0.02, 0.98, f"Generated: {timestamp}", transform=fig.transFigure,
-                fontsize=8, verticalalignment='top', alpha=0.6)
-        
-        # Tight layout with extra padding
+        fig.text(0.02, 0.98, f"Generated: {timestamp}", transform=fig.transFigure, fontsize=8, verticalalignment='top', alpha=0.6)
         plt.tight_layout(rect=[0.02, 0.05, 0.98, 0.95])
-        
         return fig
-    
-    def create_viscosity_visualization(self, df, fit_results=None, Tm_from_enthalpy=None, 
-                                       customizations=None, material_name="Alloy"):
-        """Create enhanced viscosity visualization with fitted curves"""
+
+    def create_viscosity_visualization(self, df, fit_results=None, Tm_from_enthalpy=None, customizations=None, material_name="Alloy"):
         if customizations is None:
             customizations = {}
-        
         curve_thickness = customizations.get('curve_thickness', 2.5)
         box_thickness = customizations.get('box_thickness', 1.0)
         font_size = customizations.get('font_size', 12)
@@ -1100,133 +823,445 @@ class EnthalpyAnalyzer:
         tick_size = customizations.get('tick_size', 11)
         label_fontsize = customizations.get('label_fontsize', 12)
         dpi = customizations.get('dpi', 150)
-        
         fig = plt.figure(figsize=(figure_width, figure_height), dpi=dpi, constrained_layout=True)
         gs = fig.add_gridspec(3, 2, hspace=0.3, wspace=0.3)
-        
-        ax1 = fig.add_subplot(gs[0, :])  # Viscosity vs T
-        ax2 = fig.add_subplot(gs[1, 0])  # Solid fraction
-        ax3 = fig.add_subplot(gs[1, 1])  # Log viscosity
-        ax4 = fig.add_subplot(gs[2, :])  # Residuals or fit quality
-        
-        # Color scheme
+        ax1 = fig.add_subplot(gs[0, :])
+        ax2 = fig.add_subplot(gs[1, 0])
+        ax3 = fig.add_subplot(gs[1, 1])
+        ax4 = fig.add_subplot(gs[2, :])
         if colormap in plt.colormaps():
             cmap = plt.get_cmap(colormap)
         else:
             cmap = plt.cm.viridis
-        
-        # Plot 1: Viscosity vs Temperature
-        ax1.plot(df['Temperature_K'], df['Viscosity_Pa_s'],
-                color=cmap(0.3), linewidth=curve_thickness,
-                marker='o', markersize=marker_size,
-                label='Viscosity Data')
-        
+        ax1.plot(df['Temperature_K'], df['Viscosity_Pa_s'], color=cmap(0.3), linewidth=curve_thickness,
+                 marker='o', markersize=marker_size, label='Viscosity Data')
         if Tm_from_enthalpy is not None:
-            ax1.axvline(Tm_from_enthalpy, color='red', linestyle='--', 
-                       linewidth=2, alpha=0.8, label=f'Tm = {Tm_from_enthalpy:.1f} K')
-            ax1.axvspan(Tm_from_enthalpy-2, Tm_from_enthalpy+2, 
-                       alpha=0.2, color='red', label='Mushy Zone')
-        
+            ax1.axvline(Tm_from_enthalpy, color='red', linestyle='--', linewidth=2, alpha=0.8, label=f'Tm = {Tm_from_enthalpy:.1f} K')
+            ax1.axvspan(Tm_from_enthalpy-2, Tm_from_enthalpy+2, alpha=0.2, color='red', label='Mushy Zone')
         ax1.set_xlabel('Temperature (K)', fontsize=label_fontsize, fontweight='bold')
         ax1.set_ylabel('Dynamic Viscosity (Pa·s)', fontsize=label_fontsize, fontweight='bold')
-        ax1.set_title(f'Dynamic Viscosity vs Temperature - {material_name}',
-                     fontsize=title_font_size, fontweight='bold')
+        ax1.set_title(f'Dynamic Viscosity vs Temperature - {material_name}', fontsize=title_font_size, fontweight='bold')
         ax1.grid(True, alpha=grid_alpha, linestyle='--')
         ax1.legend(fontsize=legend_font_size)
         ax1.tick_params(labelsize=tick_size)
-        
-        # Plot 2: Solid fraction
         if 'Solid_Fraction' in df.columns:
-            ax2.plot(df['Temperature_K'], df['Solid_Fraction'],
-                    color=cmap(0.7), linewidth=curve_thickness,
-                    marker='s', markersize=marker_size)
+            ax2.plot(df['Temperature_K'], df['Solid_Fraction'], color=cmap(0.7), linewidth=curve_thickness,
+                     marker='s', markersize=marker_size)
             ax2.set_xlabel('Temperature (K)', fontsize=label_fontsize, fontweight='bold')
             ax2.set_ylabel('Solid Fraction', fontsize=label_fontsize, fontweight='bold')
-            ax2.set_title('Solid Fraction vs Temperature',
-                         fontsize=title_font_size, fontweight='bold')
+            ax2.set_title('Solid Fraction vs Temperature', fontsize=title_font_size, fontweight='bold')
             ax2.grid(True, alpha=grid_alpha, linestyle='--')
             ax2.tick_params(labelsize=tick_size)
-        
-        # Plot 3: Log viscosity
-        ax3.semilogy(df['Temperature_K'], df['Viscosity_Pa_s'],
-                    color=cmap(0.5), linewidth=curve_thickness,
-                    marker='^', markersize=marker_size)
+        ax3.semilogy(df['Temperature_K'], df['Viscosity_Pa_s'], color=cmap(0.5), linewidth=curve_thickness,
+                     marker='^', markersize=marker_size)
         if Tm_from_enthalpy is not None:
             ax3.axvline(Tm_from_enthalpy, color='red', linestyle='--', linewidth=2, alpha=0.8)
         ax3.set_xlabel('Temperature (K)', fontsize=label_fontsize, fontweight='bold')
         ax3.set_ylabel('Dynamic Viscosity (Pa·s) [Log Scale]', fontsize=label_fontsize, fontweight='bold')
-        ax3.set_title('Viscosity (Log Scale)',
-                     fontsize=title_font_size, fontweight='bold')
+        ax3.set_title('Viscosity (Log Scale)', fontsize=title_font_size, fontweight='bold')
         ax3.grid(True, alpha=grid_alpha, linestyle='--', which='both')
         ax3.tick_params(labelsize=tick_size)
-        
-        # Plot 4: Fitted curve if available
         if fit_results is not None:
             T_fit = np.linspace(df['Temperature_K'].min(), df['Temperature_K'].max(), 200)
-            mu_fit = self.viscosity_equation_for_fitting(T_fit,
-                                                         fit_results['A_l'],
-                                                         fit_results['E_a'],
-                                                         fit_results['A_ls'],
-                                                         fit_results['Tm'])
-            ax1.plot(T_fit, mu_fit, 'r-', linewidth=curve_thickness+1,
-                    label=f'Fitted Curve (R²={fit_results["r_squared"]:.4f})')
+            mu_fit = self.viscosity_equation_for_fitting(T_fit, fit_results['A_l'], fit_results['E_a'], fit_results['A_ls'], fit_results['Tm'])
+            ax1.plot(T_fit, mu_fit, 'r-', linewidth=curve_thickness+1, label=f'Fitted Curve (R²={fit_results["r_squared"]:.4f})')
             ax3.plot(T_fit, mu_fit, 'r-', linewidth=curve_thickness+1)
-            
-            # Residuals
             if 'residuals' in fit_results:
-                ax4.scatter(df['Temperature_K'], fit_results['residuals'],
-                           alpha=0.6, color='red', s=40)
+                ax4.scatter(df['Temperature_K'], fit_results['residuals'], alpha=0.6, color='red', s=40)
                 ax4.axhline(y=0, color='black', linestyle='--', alpha=0.5)
                 ax4.set_xlabel('Temperature (K)', fontsize=label_fontsize, fontweight='bold')
                 ax4.set_ylabel('Residuals (Pa·s)', fontsize=label_fontsize, fontweight='bold')
-                ax4.set_title(f'Fit Residuals (RMSE = {fit_results["rmse"]:.2e} Pa·s)',
-                             fontsize=title_font_size, fontweight='bold')
+                ax4.set_title(f'Fit Residuals (RMSE = {fit_results["rmse"]:.2e} Pa·s)', fontsize=title_font_size, fontweight='bold')
                 ax4.grid(True, alpha=grid_alpha, linestyle='--')
                 ax4.tick_params(labelsize=tick_size)
-        
-        # Set box thickness
         for ax in [ax1, ax2, ax3, ax4]:
             for spine in ax.spines.values():
                 spine.set_linewidth(box_thickness)
-        
-        # Add statistics
         if 'Viscosity_Pa_s' in df.columns:
-            stats_text = f"""Viscosity Statistics:
-• Min μ: {df['Viscosity_Pa_s'].min():.2e} Pa·s
-• Max μ: {df['Viscosity_Pa_s'].max():.2e} Pa·s
-• Mean μ: {df['Viscosity_Pa_s'].mean():.2e} Pa·s
-• Points: {len(df)}"""
-            
+            stats_text = f"""Viscosity Statistics:\n• Min μ: {df['Viscosity_Pa_s'].min():.2e} Pa·s\n• Max μ: {df['Viscosity_Pa_s'].max():.2e} Pa·s\n• Mean μ: {df['Viscosity_Pa_s'].mean():.2e} Pa·s\n• Points: {len(df)}"""
             if fit_results is not None:
                 stats_text += f"\n\nFit Quality:\n• R²: {fit_results['r_squared']:.6f}\n• RMSE: {fit_results['rmse']:.2e}"
-            
-            fig.text(0.98, 0.98, stats_text, transform=fig.transFigure,
-                    fontsize=font_size-1, verticalalignment='top', horizontalalignment='right',
-                    bbox=dict(boxstyle='round,pad=0.8', facecolor='lightblue', alpha=0.7,
-                             linewidth=1.5, edgecolor='navy'))
-        
+            fig.text(0.98, 0.98, stats_text, transform=fig.transFigure, fontsize=font_size-1, verticalalignment='top', horizontalalignment='right',
+                     bbox=dict(boxstyle='round,pad=0.8', facecolor='lightblue', alpha=0.7, linewidth=1.5, edgecolor='navy'))
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        fig.text(0.02, 0.98, f"Generated: {timestamp}", transform=fig.transFigure,
-                fontsize=8, verticalalignment='top', alpha=0.6)
-        
+        fig.text(0.02, 0.98, f"Generated: {timestamp}", transform=fig.transFigure, fontsize=8, verticalalignment='top', alpha=0.6)
         return fig
 
-# Continue with the rest of the main application code...
-# (The remaining code would include the main() function and all tab implementations)
-# For brevity, I'll show the key additions for viscosity in the tabs section
+# ---------- Additional visualization functions from original code ----------
+def create_comparison_visualization(analyzer, selected_indices, customizations=None):
+    if not selected_indices or not analyzer.results_history:
+        return None
+    if customizations is None:
+        customizations = {}
+    curve_thickness = customizations.get('curve_thickness', 2.5)
+    box_thickness = customizations.get('box_thickness', 1.0)
+    font_size = customizations.get('font_size', 12)
+    title_font_size = customizations.get('title_font_size', 14)
+    legend_font_size = customizations.get('legend_font_size', 10)
+    colormap = customizations.get('colormap', 'tab10')
+    grid_alpha = customizations.get('grid_alpha', 0.3)
+    figure_width = customizations.get('figure_width', 16)
+    figure_height = customizations.get('figure_height', 12)
+    tick_size = customizations.get('tick_size', 11)
+    label_fontsize = customizations.get('label_fontsize', 12)
+    dpi = customizations.get('dpi', 150)
+    fig = plt.figure(figsize=(figure_width, figure_height), dpi=dpi, constrained_layout=True)
+    gs = fig.add_gridspec(3, 4, hspace=0.3, wspace=0.3)
+    ax1 = fig.add_subplot(gs[0, :2])
+    ax2 = fig.add_subplot(gs[0, 2:])
+    ax3 = fig.add_subplot(gs[1, :2])
+    ax4 = fig.add_subplot(gs[1, 2:])
+    ax5 = fig.add_subplot(gs[2, :])
+    if colormap in plt.colormaps():
+        cmap = plt.get_cmap(colormap)
+    else:
+        cmap = plt.get_cmap('tab10')
+    colors = cmap(np.linspace(0, 1, min(20, len(selected_indices))))
+    delta_h_values = []
+    material_names = []
+    melting_temps = []
+    max_heat_capacities = []
+    markers = ['o', 's', '^', 'v', '<', '>', 'p', '*', 'h', 'H', 'D', 'd', 'P', 'X']
+    line_styles = ['-', '--', '-.', ':', (0, (3, 1, 1, 1)), (0, (5, 5))]
+    for i, idx in enumerate(selected_indices):
+        if idx >= len(analyzer.results_history):
+            continue
+        result = analyzer.results_history[idx]
+        data = result['data']
+        name = result['name']
+        color = colors[i % len(colors)]
+        marker = markers[i % len(markers)]
+        line_style = line_styles[i % len(line_styles)]
+        ax1.plot(data['Temperature_K'], data['Enthalpy_J_mol'], color=color, linewidth=curve_thickness,
+                 linestyle=line_style, marker=marker, markersize=5, markevery=max(1, len(data)//30), label=name, alpha=0.9)
+        ax2.plot(data['Temperature_K'], data['Enthalpy_J_kg'], color=color, linewidth=curve_thickness,
+                 linestyle=line_style, marker=marker, markersize=5, markevery=max(1, len(data)//30), label=name, alpha=0.9)
+        delta_h = data['Enthalpy_J_mol'].max() - data['Enthalpy_J_mol'].min()
+        delta_h_values.append(delta_h)
+        material_names.append(name)
+        dT = data['Temperature_K'].diff()
+        dH = data['Enthalpy_J_mol'].diff()
+        heat_capacity = dH / dT
+        max_heat_capacities.append(heat_capacity.max() if len(heat_capacity) > 0 else 0)
+        Tm = None
+        for fit_result in analyzer.fitting_results:
+            if fit_result['material_name'] == name:
+                Tm = fit_result['coefficients'].get('Tm')
+                break
+        melting_temps.append(Tm)
+        if Tm is not None:
+            ax1.axvline(Tm, color=color, linestyle=':', alpha=0.7, linewidth=1.5)
+            ax2.axvline(Tm, color=color, linestyle=':', alpha=0.7, linewidth=1.5)
+        if len(heat_capacity) > 0:
+            ax4.plot(data['Temperature_K'].iloc[1:], heat_capacity.iloc[1:], color=color, linewidth=curve_thickness-0.5,
+                     linestyle=line_style, alpha=0.7, label=name)
+    ax1.set_xlabel('Temperature (K)', fontsize=label_fontsize, fontweight='bold', labelpad=15)
+    ax1.set_ylabel('Enthalpy (J/mol)', fontsize=label_fontsize, fontweight='bold', labelpad=15)
+    ax1.set_title('Molar Enthalpy Comparison', fontsize=title_font_size, fontweight='bold', pad=20)
+    ax1.grid(True, alpha=grid_alpha, linestyle='--')
+    ax1.legend(loc='upper left', fontsize=legend_font_size-1, ncol=1, framealpha=0.9, shadow=True, borderpad=1, bbox_to_anchor=(1.02, 1), borderaxespad=0)
+    ax1.tick_params(axis='both', labelsize=tick_size, pad=8)
+    ax2.set_xlabel('Temperature (K)', fontsize=label_fontsize, fontweight='bold', labelpad=15)
+    ax2.set_ylabel('Specific Enthalpy (J/kg)', fontsize=label_fontsize, fontweight='bold', labelpad=15)
+    ax2.set_title('Specific Enthalpy Comparison', fontsize=title_font_size, fontweight='bold', pad=20)
+    ax2.grid(True, alpha=grid_alpha, linestyle='--')
+    ax2.legend(loc='upper left', fontsize=legend_font_size-1, ncol=1, framealpha=0.9, shadow=True, borderpad=1, bbox_to_anchor=(1.02, 1), borderaxespad=0)
+    ax2.tick_params(axis='both', labelsize=tick_size, pad=8)
+    bars = ax3.barh(range(len(delta_h_values)), delta_h_values, color=colors[:len(material_names)], edgecolor='black', linewidth=1)
+    ax3.set_yticks(range(len(material_names)))
+    ax3.set_yticklabels(material_names, fontsize=legend_font_size)
+    ax3.set_xlabel('ΔH (J/mol)', fontsize=label_fontsize, fontweight='bold', labelpad=15)
+    ax3.set_title('Total Enthalpy Change', fontsize=title_font_size, fontweight='bold', pad=15)
+    ax3.grid(True, alpha=grid_alpha, axis='x', linestyle='--')
+    ax3.tick_params(axis='both', labelsize=tick_size, pad=8)
+    for bar, value in zip(bars, delta_h_values):
+        width = bar.get_width()
+        ax3.text(width, bar.get_y() + bar.get_height()/2, f' {value:,.0f}', va='center', fontsize=legend_font_size-1, fontweight='bold')
+    ax4.set_xlabel('Temperature (K)', fontsize=label_fontsize, fontweight='bold', labelpad=15)
+    ax4.set_ylabel('Heat Capacity (J/(mol·K))', fontsize=label_fontsize, fontweight='bold', labelpad=15)
+    ax4.set_title('Heat Capacity Comparison', fontsize=title_font_size, fontweight='bold', pad=20)
+    ax4.grid(True, alpha=grid_alpha, linestyle='--')
+    ax4.legend(loc='upper left', fontsize=legend_font_size-1, ncol=1, framealpha=0.9, shadow=True, borderpad=1, bbox_to_anchor=(1.02, 1), borderaxespad=0)
+    ax4.tick_params(axis='both', labelsize=tick_size, pad=8)
+    ax5.axis('off')
+    summary_data = []
+    for i, idx in enumerate(selected_indices):
+        if idx < len(analyzer.results_history):
+            result = analyzer.results_history[idx]
+            data = result['data']
+            delta_h = data['Enthalpy_J_mol'].max() - data['Enthalpy_J_mol'].min()
+            dT = data['Temperature_K'].diff()
+            dH = data['Enthalpy_J_mol'].diff()
+            avg_cp = (dH / dT).mean() if len(dH) > 1 else 0
+            max_cp = max_heat_capacities[i] if i < len(max_heat_capacities) else 0
+            Tm = melting_temps[i]
+            summary_data.append([material_names[i], f"{delta_h:,.0f}", f"{avg_cp:.2f}", f"{max_cp:.2f}", f"{Tm:.1f}" if Tm else "N/A", len(data)])
+    col_labels = ['Material', 'ΔH (J/mol)', 'Avg Cₚ', 'Max Cₚ', 'Tₘ (K)', 'Points']
+    table = ax5.table(cellText=summary_data, colLabels=col_labels, cellLoc='center', loc='center',
+                      colWidths=[0.25, 0.15, 0.15, 0.15, 0.15, 0.15])
+    table.auto_set_font_size(False)
+    table.set_fontsize(font_size-1)
+    table.scale(1, 1.5)
+    for j, col in enumerate(col_labels):
+        table[(0, j)].set_facecolor('#1E88E5')
+        table[(0, j)].set_text_props(weight='bold', color='white')
+    for i in range(1, len(summary_data) + 1):
+        if i % 2 == 0:
+            for j in range(len(col_labels)):
+                table[(i, j)].set_facecolor('#f8f9fa')
+    ax5.set_title('Material Properties Summary', fontsize=title_font_size, fontweight='bold', pad=20)
+    for ax in [ax1, ax2, ax3, ax4]:
+        for spine in ax.spines.values():
+            spine.set_linewidth(box_thickness)
+    plt.suptitle('Multi-Material Enthalpy Comparison Dashboard', fontsize=title_font_size+4, fontweight='bold', y=0.98)
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    fig.text(0.02, 0.02, f"Generated: {timestamp}", fontsize=8, alpha=0.6)
+    return fig
 
+def create_interactive_plotly_visualization(df, composition, material_name, fitted_params=None):
+    fig = make_subplots(rows=3, cols=2,
+        subplot_titles=('Molar Enthalpy', 'Specific Enthalpy', 'Heat Capacity (dH/dT)',
+                        'Enthalpy Derivative', 'Phase Analysis', 'Data Statistics'),
+        vertical_spacing=0.12, horizontal_spacing=0.15,
+        specs=[[{'type': 'scatter'}, {'type': 'scatter'}],
+               [{'type': 'scatter'}, {'type': 'scatter'}],
+               [{'type': 'scatter'}, {'type': 'table'}]])
+    colors = px.colors.qualitative.Set1
+    fig.add_trace(go.Scatter(x=df['Temperature_K'], y=df['Enthalpy_J_mol'],
+        mode='lines+markers', name='Molar Enthalpy', line=dict(color=colors[0], width=3),
+        marker=dict(size=8, symbol='circle', line=dict(width=1, color='white')),
+        hovertemplate='<b>Temperature:</b> %{x:.1f} K<br><b>Enthalpy:</b> %{y:,.0f} J/mol<br><extra></extra>'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df['Temperature_K'], y=df['Enthalpy_J_kg'],
+        mode='lines+markers', name='Specific Enthalpy', line=dict(color=colors[1], width=3),
+        marker=dict(size=8, symbol='square', line=dict(width=1, color='white')),
+        hovertemplate='<b>Temperature:</b> %{x:.1f} K<br><b>Specific Enthalpy:</b> %{y:,.0f} J/kg<br><extra></extra>'), row=1, col=2)
+    if len(df) > 1:
+        dT = df['Temperature_K'].diff()
+        dH = df['Enthalpy_J_mol'].diff()
+        heat_capacity = dH / dT
+        window_size = min(5, len(heat_capacity) // 10)
+        heat_capacity_smooth = heat_capacity.rolling(window=window_size, center=True, min_periods=1).mean() if window_size > 1 else heat_capacity
+        fig.add_trace(go.Scatter(x=df['Temperature_K'], y=heat_capacity_smooth,
+            mode='lines+markers', name='Heat Capacity', line=dict(color=colors[2], width=3),
+            marker=dict(size=6, symbol='diamond', line=dict(width=1, color='white')),
+            hovertemplate='<b>Temperature:</b> %{x:.1f} K<br><b>Cₚ:</b> %{y:.3f} J/(mol·K)<br><extra></extra>'), row=2, col=1)
+    if len(df) > 2:
+        d2H = df['Enthalpy_J_mol'].diff().diff()
+        dT2 = df['Temperature_K'].diff().diff()
+        second_derivative = d2H / dT2
+        fig.add_trace(go.Scatter(x=df['Temperature_K'].iloc[2:], y=second_derivative.iloc[2:],
+            mode='lines', name='d²H/dT²', line=dict(color=colors[3], width=2, dash='dash'),
+            hovertemplate='<b>Temperature:</b> %{x:.1f} K<br><b>d²H/dT²:</b> %{y:.3f} J/(mol·K²)<br><extra></extra>'), row=2, col=2)
+    fig.add_trace(go.Scatter(x=[df['Temperature_K'].min(), df['Temperature_K'].max()], y=[0, 1],
+        mode='lines', name='Phase Fraction', line=dict(color=colors[4], width=2), visible='legendonly'), row=3, col=1)
+    stats_data = [['Property', 'Value'], ['Data Points', str(len(df))], ['Min Temperature', f"{df['Temperature_K'].min():.1f} K"],
+                  ['Max Temperature', f"{df['Temperature_K'].max():.1f} K"], ['ΔH (molar)', f"{df['Enthalpy_J_mol'].max() - df['Enthalpy_J_mol'].min():,.0f} J/mol"],
+                  ['Avg dH/dT', f"{(df['Enthalpy_J_mol'].diff() / df['Temperature_K'].diff()).mean():.3f} J/(mol·K)"],
+                  ['Composition', ', '.join([f'{k}:{v:.3f}' for k, v in list(composition.items())[:3]])]]
+    fig.add_trace(go.Table(header=dict(values=['Property', 'Value'], fill_color='#1E88E5', align='center', font=dict(color='white', size=12)),
+        cells=dict(values=[[row[0] for row in stats_data], [row[1] for row in stats_data]], fill_color='white', align='center', font=dict(color='black', size=11)),
+        columnwidth=[0.4, 0.6]), row=3, col=2)
+    if fitted_params and 'Tm' in fitted_params:
+        Tm = fitted_params['Tm']
+        for row in [1, 2]:
+            for col in [1, 2]:
+                fig.add_vline(x=Tm, line_dash="dot", line_color="red", row=row, col=col, exclude_empty_subplots=False)
+                fig.add_annotation(x=Tm, y=1.0, yref="y domain", text=f"Tm = {Tm:.1f} K", showarrow=False,
+                    font=dict(size=10, color="red", family="Arial"), xanchor="left", yanchor="top", row=row, col=col)
+    fig.update_layout(title=dict(text=f'Enthalpy Analysis - {material_name}', font=dict(size=24, color='#2C3E50')),
+        height=1000, showlegend=True, hovermode='x unified', template='plotly_white',
+        plot_bgcolor='rgba(240, 240, 240, 0.5)', paper_bgcolor='white',
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, bgcolor='rgba(255, 255, 255, 0.8)'))
+    fig.update_xaxes(title_text='Temperature (K)', row=1, col=1)
+    fig.update_yaxes(title_text='Enthalpy (J/mol)', row=1, col=1)
+    fig.update_xaxes(title_text='Temperature (K)', row=1, col=2)
+    fig.update_yaxes(title_text='Enthalpy (J/kg)', row=1, col=2)
+    fig.update_xaxes(title_text='Temperature (K)', row=2, col=1)
+    fig.update_yaxes(title_text='Cₚ (J/(mol·K))', row=2, col=1)
+    fig.update_xaxes(title_text='Temperature (K)', row=2, col=2)
+    fig.update_yaxes(title_text='d²H/dT² (J/(mol·K²))', row=2, col=2)
+    fig.update_xaxes(title_text='Temperature (K)', row=3, col=1)
+    fig.update_yaxes(title_text='Phase Fraction', row=3, col=1)
+    return fig
+
+def create_curve_fitting_visualization(T_data, H_data, T_fit, H_fit, fit_params, residuals, r_squared, rmse, material_name, composition, molar_weight, customizations=None):
+    if customizations is None:
+        customizations = {}
+    curve_thickness = customizations.get('curve_thickness', 2.5)
+    box_thickness = customizations.get('box_thickness', 1.0)
+    font_size = customizations.get('font_size', 12)
+    title_font_size = customizations.get('title_font_size', 14)
+    legend_font_size = customizations.get('legend_font_size', 10)
+    colormap = customizations.get('colormap', 'viridis')
+    grid_alpha = customizations.get('grid_alpha', 0.3)
+    figure_width = customizations.get('figure_width', 16)
+    figure_height = customizations.get('figure_height', 12)
+    tick_size = customizations.get('tick_size', 11)
+    label_fontsize = customizations.get('label_fontsize', 12)
+    dpi = customizations.get('dpi', 150)
+    A1_fit, A2_fit, Tm_fit, DeltaHf_fit, k_fit, H298_fit = fit_params
+    molar_weight_kg = molar_weight / 1000.0
+    fig = plt.figure(figsize=(figure_width, figure_height), dpi=dpi, constrained_layout=True)
+    gs = fig.add_gridspec(3, 3, hspace=0.25, wspace=0.25)
+    ax1 = fig.add_subplot(gs[0:2, :])
+    ax1.scatter(T_data, H_data, alpha=0.7, label='Original Data', color='#1E88E5', s=60, edgecolors='white', linewidth=1.5, zorder=5)
+    ax1.plot(T_fit, H_fit, 'r-', linewidth=curve_thickness+1, label='Fitted Curve', alpha=0.9, zorder=4)
+    n = len(T_data); p = len(fit_params); t_value = 2.0
+    residuals_std = np.std(residuals)
+    conf_interval = t_value * residuals_std * np.sqrt(1/n + (T_fit - np.mean(T_data))**2 / np.sum((T_data - np.mean(T_data))**2))
+    ax1.fill_between(T_fit, H_fit - conf_interval, H_fit + conf_interval, alpha=0.2, color='red', label='95% Confidence Interval')
+    ax1.axvline(Tm_fit, color='red', linestyle='--', alpha=0.9, linewidth=2.5, label=f'Melting Point Tₘ = {Tm_fit:.1f} K', zorder=3)
+    ax1.axvspan(Tm_fit-50, Tm_fit+50, alpha=0.2, color='orange', label='Melting Region', zorder=2)
+    ax1.set_xlabel('Temperature (K)', fontsize=label_fontsize, fontweight='bold', labelpad=15)
+    ax1.set_ylabel('Enthalpy (J/mol)', fontsize=label_fontsize, fontweight='bold', labelpad=15)
+    ax1.set_title(f'Enthalpy-Temperature Curve Fitting - {material_name}', fontsize=title_font_size+2, fontweight='bold', pad=25)
+    ax1.grid(True, alpha=grid_alpha, linestyle='--', zorder=1)
+    ax1.legend(loc='upper left', fontsize=legend_font_size, framealpha=0.95, borderpad=1, labelspacing=0.5, handlelength=2, shadow=True, fancybox=True, edgecolor='black')
+    ax1.tick_params(axis='both', which='major', labelsize=tick_size, pad=10)
+    ax1.tick_params(axis='both', which='minor', labelsize=tick_size-2, pad=8)
+    ax2 = fig.add_subplot(gs[2, 0])
+    ax2.scatter(T_data, residuals, alpha=0.7, color='#FF7043', s=50)
+    ax2.axhline(y=0, color='r', linestyle='--', alpha=0.7, linewidth=2)
+    residual_mean = np.mean(residuals)
+    residual_std = np.std(residuals)
+    ax2.axhline(y=residual_mean, color='blue', linestyle=':', alpha=0.5, linewidth=1.5, label=f'Mean: {residual_mean:.2f}')
+    ax2.axhline(y=residual_mean + 2*residual_std, color='green', linestyle=':', alpha=0.5, linewidth=1, label='±2σ')
+    ax2.axhline(y=residual_mean - 2*residual_std, color='green', linestyle=':', alpha=0.5, linewidth=1)
+    ax2.set_xlabel('Temperature (K)', fontsize=label_fontsize, fontweight='bold', labelpad=15)
+    ax2.set_ylabel('Residuals (J/mol)', fontsize=label_fontsize, fontweight='bold', labelpad=15)
+    ax2.set_title(f'Residual Plot\nσ = {residual_std:.2f}', fontsize=title_font_size, fontweight='bold', pad=15)
+    ax2.grid(True, alpha=grid_alpha, linestyle='--')
+    ax2.legend(fontsize=legend_font_size-2)
+    ax2.tick_params(axis='both', labelsize=tick_size, pad=8)
+    ax3 = fig.add_subplot(gs[2, 1])
+    H_specific_fit = H_fit / (molar_weight / 1000.0)
+    ax3.plot(T_fit, H_specific_fit, 'purple', linewidth=curve_thickness, alpha=0.9)
+    ax3.axvline(Tm_fit, color='red', linestyle='--', alpha=0.7, linewidth=1.5)
+    delta_H_specific = H_specific_fit.max() - H_specific_fit.min()
+    ax3.annotate(f'ΔH = {delta_H_specific:,.0f} J/kg', xy=(0.05, 0.95), xycoords='axes fraction',
+                 fontsize=font_size, fontweight='bold', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    ax3.set_xlabel('Temperature (K)', fontsize=label_fontsize, fontweight='bold', labelpad=15)
+    ax3.set_ylabel('Enthalpy (J/kg)', fontsize=label_fontsize, fontweight='bold', labelpad=15)
+    ax3.set_title('Fitted Specific Enthalpy', fontsize=title_font_size, fontweight='bold', pad=15)
+    ax3.grid(True, alpha=grid_alpha, linestyle='--')
+    ax3.tick_params(axis='both', labelsize=tick_size, pad=8)
+    ax4 = fig.add_subplot(gs[2, 2])
+    ax4.axis('off')
+    A1_spec = A1_fit / molar_weight_kg
+    A2_spec = A2_fit / molar_weight_kg
+    DeltaHf_spec = DeltaHf_fit / molar_weight_kg
+    H298_spec = H298_fit / molar_weight_kg
+    coeff_text = (f"🔧 **Molar Parameters (J/mol, K):**\n\n"
+                  f"• A₁ = {A1_fit:.4f} J/(mol·K)\n"
+                  f"• A₂ = {A2_fit:.4f} J/(mol·K)\n"
+                  f"• Tₘ = {Tm_fit:.2f} K\n"
+                  f"• ΔHf = {DeltaHf_fit:,.0f} J/mol\n"
+                  f"• k = {k_fit:.6f} 1/K\n"
+                  f"• H₂₉₈ = {H298_fit:,.0f} J/mol\n"
+                  f"• M = {molar_weight:.2f} g/mol\n\n"
+                  f"🔧 **Specific Parameters (J/kg, K):**\n\n"
+                  f"• A₁ = {A1_spec:.4f} J/(kg·K)\n"
+                  f"• A₂ = {A2_spec:.4f} J/(kg·K)\n"
+                  f"• Tₘ = {Tm_fit:.2f} K\n"
+                  f"• ΔHf = {DeltaHf_spec:,.0f} J/kg\n"
+                  f"• k = {k_fit:.6f} 1/K\n"
+                  f"• H₂₉₈ = {H298_spec:,.0f} J/kg\n\n"
+                  f"📊 **Goodness of Fit:**\n"
+                  f"• R² = {r_squared:.6f}\n"
+                  f"• RMSE = {rmse:.2f} J/mol\n"
+                  f"• Data Points = {len(T_data)}\n"
+                  f"• Residual σ = {residual_std:.2f}")
+    ax4.text(0.1, 0.95, coeff_text, transform=ax4.transAxes, fontsize=label_fontsize, verticalalignment='top',
+             bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.9, pad=15, linewidth=2, edgecolor='navy'))
+    for ax in [ax1, ax2, ax3]:
+        for spine in ax.spines.values():
+            spine.set_linewidth(box_thickness)
+    comp_text = 'Composition: ' + ', '.join([f'{e}={f:.4f}' for e, f in list(composition.items())[:4]])
+    if len(composition) > 4:
+        comp_text += f" ... (+{len(composition)-4} more)"
+    fig.text(0.5, 0.02, comp_text, ha='center', fontsize=font_size-1, style='italic', alpha=0.9, fontweight='medium',
+             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3, pad=5))
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    fig.text(0.02, 0.98, f"Generated: {timestamp}", fontsize=8, alpha=0.6)
+    return fig
+
+def create_phase_diagram_visualization(analyzer, selected_indices, customizations=None):
+    if not selected_indices or not analyzer.results_history:
+        return None
+    if customizations is None:
+        customizations = {}
+    curve_thickness = customizations.get('curve_thickness', 2.5)
+    box_thickness = customizations.get('box_thickness', 1.0)
+    font_size = customizations.get('font_size', 12)
+    title_font_size = customizations.get('title_font_size', 14)
+    legend_font_size = customizations.get('legend_font_size', 10)
+    colormap = customizations.get('colormap', 'tab10')
+    grid_alpha = customizations.get('grid_alpha', 0.3)
+    figure_width = customizations.get('figure_width', 14)
+    figure_height = customizations.get('figure_height', 10)
+    tick_size = customizations.get('tick_size', 11)
+    label_fontsize = customizations.get('label_fontsize', 12)
+    fig, axes = plt.subplots(2, 2, figsize=(figure_width, figure_height), constrained_layout=True)
+    ax1, ax2, ax3, ax4 = axes.flatten()
+    if colormap in plt.colormaps():
+        cmap = plt.get_cmap(colormap)
+    else:
+        cmap = plt.get_cmap('tab10')
+    colors = cmap(np.linspace(0, 1, min(10, len(selected_indices))))
+    markers = ['o', 's', '^', 'v', '<', '>', 'p', '*', 'h', 'D']
+    for i, idx in enumerate(selected_indices):
+        if idx >= len(analyzer.results_history):
+            continue
+        result = analyzer.results_history[idx]
+        data = result['data']
+        name = result['name']
+        color = colors[i % len(colors)]
+        marker = markers[i % len(markers)]
+        ax1.plot(data['Temperature_K'], data['Enthalpy_J_mol'], color=color, linewidth=curve_thickness, marker=marker, markersize=4, markevery=max(1, len(data)//20), label=name)
+        ax2.plot(data['Temperature_K'], data['Enthalpy_J_kg'], color=color, linewidth=curve_thickness, marker=marker, markersize=4, markevery=max(1, len(data)//20), label=name)
+        if len(data) > 1:
+            dT = data['Temperature_K'].diff()
+            dH = data['Enthalpy_J_mol'].diff()
+            heat_capacity = dH / dT
+            ax3.plot(data['Temperature_K'].iloc[1:], heat_capacity.iloc[1:], color=color, linewidth=curve_thickness-1, marker=marker, markersize=3, markevery=max(1, len(data)//30), label=name, alpha=0.8)
+        cumulative_enthalpy = data['Enthalpy_J_mol'].cumsum()
+        ax4.plot(data['Temperature_K'], cumulative_enthalpy, color=color, linewidth=curve_thickness, marker=marker, markersize=4, markevery=max(1, len(data)//20), label=name)
+    ax1.set_xlabel('Temperature (K)', fontsize=label_fontsize)
+    ax1.set_ylabel('Enthalpy (J/mol)', fontsize=label_fontsize)
+    ax1.set_title('Molar Enthalpy', fontsize=title_font_size)
+    ax1.grid(True, alpha=grid_alpha)
+    ax1.legend(fontsize=legend_font_size-2)
+    ax2.set_xlabel('Temperature (K)', fontsize=label_fontsize)
+    ax2.set_ylabel('Specific Enthalpy (J/kg)', fontsize=label_fontsize)
+    ax2.set_title('Specific Enthalpy', fontsize=title_font_size)
+    ax2.grid(True, alpha=grid_alpha)
+    ax2.legend(fontsize=legend_font_size-2)
+    ax3.set_xlabel('Temperature (K)', fontsize=label_fontsize)
+    ax3.set_ylabel('Heat Capacity (J/(mol·K))', fontsize=label_fontsize)
+    ax3.set_title('Heat Capacity', fontsize=title_font_size)
+    ax3.grid(True, alpha=grid_alpha)
+    ax3.legend(fontsize=legend_font_size-2)
+    ax4.set_xlabel('Temperature (K)', fontsize=label_fontsize)
+    ax4.set_ylabel('Cumulative Enthalpy (J/mol)', fontsize=label_fontsize)
+    ax4.set_title('Cumulative Enthalpy', fontsize=title_font_size)
+    ax4.grid(True, alpha=grid_alpha)
+    ax4.legend(fontsize=legend_font_size-2)
+    for ax in [ax1, ax2, ax3, ax4]:
+        for spine in ax.spines.values():
+            spine.set_linewidth(box_thickness)
+    plt.suptitle('Phase Diagram Analysis', fontsize=title_font_size+2, fontweight='bold')
+    return fig
+
+# ---------- MAIN APPLICATION ----------
 def main():
-    st.markdown('<h1 class="main-header">🔥 Thermodynamic Enthalpy Analyzer Pro</h1>', unsafe_allow_html=True)
-    st.markdown("### Advanced thermodynamic analysis tool for materials science and engineering")
+    st.markdown('<h1 class="main-header">🔥 Thermodynamic Enthalpy & Viscosity Analyzer Pro</h1>', unsafe_allow_html=True)
+    st.markdown("### Advanced thermodynamic and transport property analysis for materials science")
     st.markdown("---")
-    
-    # Initialize analyzer with session state
+
     if 'analyzer' not in st.session_state:
         st.session_state.analyzer = EnthalpyAnalyzer()
-    
     analyzer = st.session_state.analyzer
-    
-    # Display session info
+
     with st.expander("📊 Session Information", expanded=False):
         col_sess1, col_sess2, col_sess3, col_sess4 = st.columns(4)
         with col_sess1:
@@ -1237,138 +1272,526 @@ def main():
             st.metric("Viscosity Fits", len(analyzer.viscosity_fitting_results))
         with col_sess4:
             st.metric("Available TDB Files", len(analyzer.get_available_tdb_files()))
-    
-    # Create tabs with enhanced icons - ADDED VISCOSITY TAB
+
     tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-        "🔬 Enthalpy Computation",
-        "📊 Curve Fitting & Analysis",
-        "💧 Viscosity Modeling",  # NEW TAB
-        "🔄 Multi-Material Comparison",
-        "📈 Phase Diagram Analysis",
-        "🎨 Visualization Customization",
-        "ℹ️ Help & Settings"
+        "🔬 Enthalpy Computation", "📊 Curve Fitting & Analysis", "💧 Viscosity Modeling",
+        "🔄 Multi-Material Comparison", "📈 Phase Diagram Analysis",
+        "🎨 Visualization Customization", "ℹ️ Help & Settings"
     ])
-    
-    # ==================== TAB 1: Enthalpy Computation ====================
+
+    # ==================== TAB 1: Enthalpy Computation (full original) ====================
     with tab1:
-        # ... (existing enthalpy computation code remains the same)
         st.markdown('<div class="sub-header">🔬 Enthalpy Computation from TDB Files</div>', unsafe_allow_html=True)
-        # [Existing code from original file - unchanged]
-        pass  # Placeholder - use original Tab 1 code
-    
-    # ==================== TAB 2: Curve Fitting ====================
+        # File selection
+        st.markdown("#### 📁 TDB File Selection")
+        col_file1, col_file2 = st.columns([1.2, 1])
+        with col_file1:
+            available_tdb_files = analyzer.get_available_tdb_files()
+            if available_tdb_files:
+                tdb_source = st.radio("Source:", ["Select from database directory", "Upload new TDB file"], horizontal=True, key="tab1_tdb_source")
+            else:
+                st.info(f"No TDB files found in '{analyzer.database_dir}'. Please upload a file.")
+                tdb_source = "Upload new TDB file"
+            tdb_path = None
+            if tdb_source == "Select from database directory" and available_tdb_files:
+                selected_file = st.selectbox(f"Available TDB files in '{analyzer.database_dir}' directory:", available_tdb_files, help="Select a thermodynamic database file", key="tab1_tdb_select")
+                tdb_path = str(analyzer.database_dir / selected_file)
+                st.success(f"✓ Selected: **{selected_file}**")
+                if os.path.exists(tdb_path):
+                    file_size = os.path.getsize(tdb_path) / 1024
+                    st.caption(f"File size: {file_size:.1f} KB")
+            else:
+                uploaded_file = st.file_uploader("Upload TDB file", type=["tdb", "TDB"], help="Upload a thermodynamic database file (.tdb)", key="tab1_uploader")
+                if uploaded_file is not None:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.tdb') as tmp_file:
+                        tmp_file.write(uploaded_file.read())
+                        tdb_path = tmp_file.name
+                    st.success(f"✓ Uploaded: **{uploaded_file.name}**")
+                    if st.checkbox("💾 Save to 'databases' directory for future use", value=True, key="tab1_save_tdb"):
+                        saved_path = analyzer.save_uploaded_tdb(uploaded_file)
+                        if saved_path:
+                            st.info(f"Saved to: `{saved_path}`")
+        with col_file2:
+            if tdb_path and os.path.exists(tdb_path):
+                try:
+                    with st.spinner("Loading thermodynamic database..."):
+                        dbf = Database(tdb_path)
+                    st.markdown("#### 🗄️ Database Information")
+                    st.markdown(f"- **Elements**: {', '.join(sorted([e for e in dbf.elements if e != 'VA']))}\n- **Phases**: {len(dbf.phases)} available\n- **File**: `{os.path.basename(tdb_path)}`")
+                    with st.expander("📋 View All Phases", expanded=False):
+                        phases_list = sorted(dbf.phases.keys())
+                        cols = st.columns(3)
+                        for i, phase in enumerate(phases_list):
+                            cols[i % 3].write(f"`{phase}`")
+                except Exception as e:
+                    st.error(f"❌ Error loading database: {str(e)}")
+                    st.stop()
+            else:
+                st.info("👈 Please select or upload a TDB file to continue")
+                st.stop()
+        # Composition settings
+        st.markdown("---")
+        st.markdown("#### ⚙️ Calculation Settings")
+        col_set1, col_set2 = st.columns([1, 1.2])
+        with col_set1:
+            available_elements = sorted([e for e in dbf.elements if e != 'VA'])
+            if not available_elements:
+                st.error("No valid elements found in database (excluding VA)")
+                st.stop()
+            selected_elements = st.multiselect("Select alloy elements:", available_elements, default=available_elements[:min(3, len(available_elements))], help="Select elements to include in your alloy composition", key="tab1_elements")
+            if not selected_elements:
+                st.warning("⚠️ Please select at least one element")
+                st.stop()
+            st.markdown("**Composition Input:**")
+            fraction_type = st.radio("Fraction type:", ["Mole Fraction", "Weight Fraction"], horizontal=True, key="tab1_comp_type")
+            composition_key = f"tab1_composition_{'_'.join(sorted(selected_elements))}"
+            if composition_key not in st.session_state:
+                n_elements = len(selected_elements)
+                initial_values = {element: 1.0/n_elements for element in selected_elements}
+                st.session_state[composition_key] = initial_values
+            composition = {}
+            total_entered = 0.0
+            for i, element in enumerate(selected_elements[:-1]):
+                col_slider, col_number = st.columns([3, 1])
+                with col_slider:
+                    current_value = st.session_state[composition_key].get(element, 1.0/len(selected_elements))
+                    widget_key_slider = f"tab1_slider_{element}"
+                    widget_key_number = f"tab1_num_{element}"
+                    if widget_key_slider not in st.session_state.widget_state:
+                        st.session_state.widget_state[widget_key_slider] = current_value
+                    if widget_key_number not in st.session_state.widget_state:
+                        st.session_state.widget_state[widget_key_number] = current_value
+                    slider_value = st.slider(f"{element} {fraction_type}", 0.0, 1.0, float(st.session_state.widget_state[widget_key_slider]), 0.001, key=widget_key_slider, format="%.3f",
+                                             on_change=lambda el=element, key_s=widget_key_slider, key_n=widget_key_number: st.session_state.widget_state.update({key_n: st.session_state[key_s]}))
+                    st.session_state.widget_state[widget_key_slider] = slider_value
+                with col_number:
+                    num_value = st.number_input("Value", 0.0, 1.0, float(st.session_state.widget_state[widget_key_number]), 0.001, key=widget_key_number, format="%.3f", label_visibility="collapsed",
+                                                on_change=lambda el=element, key_s=widget_key_slider, key_n=widget_key_number: st.session_state.widget_state.update({key_s: st.session_state[key_n]}))
+                    st.session_state.widget_state[widget_key_number] = num_value
+                composition[element] = slider_value
+                total_entered += slider_value
+            last_element = selected_elements[-1]
+            last_value = max(0.0, 1.0 - total_entered)
+            composition[last_element] = last_value
+            st.session_state[composition_key] = composition
+            total = sum(composition.values())
+            st.markdown(f"""
+            <div class="info-box">
+            <strong>Auto-calculated:</strong> {last_element} = {last_value:.4f}<br>
+            <strong>Total:</strong> {total:.4f}<br>
+            <strong>Status:</strong> <span style="color:{'green' if abs(total - 1.0) < 0.001 else 'red'}">
+            {"✅ Valid" if abs(total - 1.0) < 0.001 else "❌ Invalid - Please adjust values"}
+            </span>
+            </div>
+            """, unsafe_allow_html=True)
+            if st.button("🔄 Reset Composition", key="tab1_reset_comp"):
+                if composition_key in st.session_state:
+                    del st.session_state[composition_key]
+                for element in selected_elements:
+                    widget_key_slider = f"tab1_slider_{element}"
+                    widget_key_number = f"tab1_num_{element}"
+                    if widget_key_slider in st.session_state.widget_state:
+                        del st.session_state.widget_state[widget_key_slider]
+                    if widget_key_number in st.session_state.widget_state:
+                        del st.session_state.widget_state[widget_key_number]
+                st.rerun()
+            if fraction_type == "Weight Fraction":
+                composition_mole = analyzer.convert_composition(composition, 'weight', 'mole')
+            else:
+                composition_mole = composition.copy()
+        with col_set2:
+            st.markdown("**Temperature Range:**")
+            col_temp1, col_temp2, col_temp3 = st.columns(3)
+            with col_temp1:
+                T_start = st.number_input("Start (K)", 100, 5000, 300, 10, key="tab1_T_start")
+            with col_temp2:
+                T_end = st.number_input("End (K)", T_start+10, 6000, 1500, 10, key="tab1_T_end")
+            with col_temp3:
+                T_step = st.number_input("Step (K)", 1, 200, 10, key="tab1_T_step")
+            if T_end <= T_start:
+                st.error("❌ End temperature must be greater than start temperature")
+                st.stop()
+            st.markdown("**Phase Selection:**")
+            available_phases = sorted(dbf.phases.keys())
+            default_phases = available_phases[:min(2, len(available_phases))]
+            selected_phases = st.multiselect("Equilibrium phases:", available_phases, default=default_phases, help="Select phases to consider in equilibrium calculation", key="tab1_phases")
+            if not selected_phases:
+                st.warning("⚠️ Please select at least one phase")
+                st.stop()
+            P = st.number_input("Pressure (Pa)", 1000, 10000000, 101325, 1000, key="tab1_pressure")
+            st.markdown("**Additional Options:**")
+            show_heat_capacity = st.checkbox("Calculate heat capacity", value=True, key="tab1_heat_cap")
+            smooth_data = st.checkbox("Smooth enthalpy data", value=False, key="tab1_smooth")
+        st.markdown("---")
+        cache_key = f"simulation_{hash(str(composition_mole))}_{T_start}_{T_end}_{T_step}_{P}_{str(sorted(selected_phases))}"
+        compute_button = st.button("🚀 Compute Enthalpy", type="primary", width='stretch', key="tab1_compute")
+        if compute_button:
+            with st.spinner("🔄 Performing equilibrium calculation... This may take a moment"):
+                try:
+                    if cache_key in st.session_state.simulation_cache:
+                        st.info("📊 Using cached results from previous computation")
+                        result_df = st.session_state.simulation_cache[cache_key]['data']
+                        material_name = st.session_state.simulation_cache[cache_key]['name']
+                    else:
+                        conditions = {v.T: (T_start, T_end, T_step), v.P: P}
+                        for i, element in enumerate(composition_mole.keys()):
+                            if composition_mole[element] > 0:
+                                conditions[v.X(element)] = composition_mole[element]
+                        elements_with_va = selected_elements + ['VA']
+                        eq_result = equilibrium(dbf, elements_with_va, selected_phases, conditions, output='HM', verbose=False, broadcast=False)
+                        T_values = eq_result.T.values.flatten()
+                        result_values = eq_result['HM'].values.flatten()
+                        result_df = pd.DataFrame({'Temperature_K': T_values, 'Enthalpy_J_mol': result_values})
+                        result_df = result_df.dropna().sort_values('Temperature_K').reset_index(drop=True)
+                        if len(result_df) == 0:
+                            st.error("❌ Calculation returned no valid results. Try adjusting parameters.")
+                            st.stop()
+                        if smooth_data and len(result_df) > 10:
+                            window_size = min(5, len(result_df) // 10)
+                            result_df['Enthalpy_J_mol'] = result_df['Enthalpy_J_mol'].rolling(window=window_size, center=True, min_periods=1).mean()
+                        material_name = "-".join([f"{e}{composition_mole[e]:.2f}" for e in selected_elements[:3]])
+                        if len(selected_elements) > 3:
+                            material_name += f"-{len(selected_elements)-3}more"
+                        st.session_state.simulation_cache[cache_key] = {'data': result_df, 'name': material_name, 'composition': composition_mole, 'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+                    result_df = analyzer.convert_to_specific_enthalpy(result_df, composition_mole)
+                    if show_heat_capacity and len(result_df) > 1:
+                        dT = result_df['Temperature_K'].diff()
+                        dH = result_df['Enthalpy_J_mol'].diff()
+                        result_df['Heat_Capacity_J_per_mol_K'] = dH / dT
+                    result_info = {
+                        'name': material_name, 'composition': composition_mole, 'composition_type': fraction_type, 'data': result_df,
+                        'phases': selected_phases, 'tdb_file': os.path.basename(tdb_path), 'temperature_range': (T_start, T_end, T_step),
+                        'output_quantity': 'HM', 'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'pressure': P,
+                        'show_heat_capacity': show_heat_capacity
+                    }
+                    existing_idx = -1
+                    for i, res in enumerate(analyzer.results_history):
+                        if (res['name'] == material_name and res['temperature_range'] == (T_start, T_end, T_step) and res['tdb_file'] == os.path.basename(tdb_path)):
+                            existing_idx = i
+                            break
+                    if existing_idx >= 0:
+                        analyzer.results_history[existing_idx] = result_info
+                        st.info("↻ Updated existing calculation")
+                    else:
+                        analyzer.results_history.append(result_info)
+                    fig = analyzer.create_enhanced_visualization(result_df, composition_mole, material_name, analyzer.plot_customizations, None, show_heat_capacity)
+                    thumbnail = analyzer.create_thumbnail(fig)
+                    if thumbnail:
+                        thumb_exists = False
+                        for i, thumb in enumerate(analyzer.history_thumbnails):
+                            if thumb['name'] == material_name:
+                                analyzer.history_thumbnails[i] = {'name': material_name, 'thumbnail': thumbnail, 'timestamp': result_info['timestamp']}
+                                thumb_exists = True
+                                break
+                        if not thumb_exists:
+                            analyzer.history_thumbnails.append({'name': material_name, 'thumbnail': thumbnail, 'timestamp': result_info['timestamp']})
+                    st.success(f"✅ Calculation completed! Generated {len(result_df)} data points.")
+                    with st.container():
+                        st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+                        st.pyplot(fig)
+                        st.markdown('</div>', unsafe_allow_html=True)
+                    col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+                    with col_m1:
+                        st.metric("Min Enthalpy (J/mol)", f"{result_df['Enthalpy_J_mol'].min():,.0f}")
+                    with col_m2:
+                        st.metric("Max Enthalpy (J/mol)", f"{result_df['Enthalpy_J_mol'].max():,.0f}")
+                    with col_m3:
+                        st.metric("ΔH (J/mol)", f"{result_df['Enthalpy_J_mol'].max() - result_df['Enthalpy_J_mol'].min():,.0f}")
+                    with col_m4:
+                        st.metric("Data Points", len(result_df))
+                    st.markdown('<div class="download-section">', unsafe_allow_html=True)
+                    st.markdown("#### 📥 Download Results")
+                    st.markdown('<div class="column-selector">', unsafe_allow_html=True)
+                    st.markdown("**Select columns to include:**")
+                    available_columns = ['Temperature_K', 'Enthalpy_J_mol', 'Enthalpy_J_kg']
+                    if show_heat_capacity and 'Heat_Capacity_J_per_mol_K' in result_df.columns:
+                        available_columns.append('Heat_Capacity_J_per_mol_K')
+                    col_sel1, col_sel2 = st.columns(2)
+                    with col_sel1:
+                        csv_columns = st.multiselect("CSV Download Columns:", options=available_columns, default=available_columns, key="tab1_csv_columns")
+                        col_p1, col_p2, col_p3 = st.columns(3)
+                        with col_p1:
+                            if st.button("Basic", key="tab1_preset_basic"):
+                                st.session_state.tab1_csv_columns = ['Temperature_K', 'Enthalpy_J_mol']
+                                st.rerun()
+                        with col_p2:
+                            if st.button("All", key="tab1_preset_all"):
+                                st.session_state.tab1_csv_columns = available_columns
+                                st.rerun()
+                        with col_p3:
+                            if st.button("Clear", key="tab1_preset_clear"):
+                                st.session_state.tab1_csv_columns = []
+                                st.rerun()
+                    with col_sel2:
+                        dat_columns = st.multiselect("DAT Download Columns:", options=available_columns, default=available_columns, key="tab1_dat_columns")
+                    st.markdown('</div>', unsafe_allow_html=True)
+                    col_dl1, col_dl2 = st.columns(2)
+                    with col_dl1:
+                        if csv_columns:
+                            csv_df = result_df[csv_columns].copy()
+                            csv_full = csv_df.to_csv(index=False)
+                            col_suffix = "_".join([c.split('_')[0] for c in csv_columns])
+                            timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+                            st.download_button(f"📄 Download CSV ({col_suffix})", data=csv_full, file_name=f"enthalpy_{material_name.replace(' ', '_')}_{col_suffix}_{timestamp_str}.csv", mime="text/csv", key=f"tab1_csv_download_{timestamp_str}")
+                        else:
+                            st.warning("Please select at least one column for CSV download")
+                    with col_dl2:
+                        if dat_columns:
+                            metadata = {'TDB File': os.path.basename(tdb_path), 'Phases': ', '.join(selected_phases), 'Pressure (Pa)': P,
+                                        'Temperature Range': f"{T_start}-{T_end} K", 'Composition Type': fraction_type, 'Columns': ', '.join(dat_columns),
+                                        'Timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+                            dat_df = result_df[dat_columns].copy()
+                            dat_content = analyzer.format_dat_file(dat_df, composition_mole, metadata, dat_columns)
+                            dat_suffix = "_".join([c.split('_')[0] for c in dat_columns])
+                            timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+                            st.download_button(f"📄 Download DAT ({dat_suffix})", data=dat_content, file_name=f"enthalpy_{material_name.replace(' ', '_')}_{dat_suffix}_{timestamp_str}.dat", mime="text/plain", key=f"tab1_dat_download_{timestamp_str}")
+                        else:
+                            st.warning("Please select at least one column for DAT download")
+                    st.markdown('</div>', unsafe_allow_html=True)
+                    with st.expander("🔍 View Complete Data Table", expanded=False):
+                        st.markdown('<div class="data-table">', unsafe_allow_html=True)
+                        st.dataframe(result_df, width='stretch', height=300)
+                        st.markdown('</div>', unsafe_allow_html=True)
+                except Exception as e:
+                    st.error(f"❌ Calculation error: {str(e)}")
+                    st.exception(e)
+
+    # ==================== TAB 2: Curve Fitting (full original) ====================
     with tab2:
-        # ... (existing curve fitting code remains the same)
         st.markdown('<div class="sub-header">📊 Curve Fitting & Analysis</div>', unsafe_allow_html=True)
-        # [Existing code from original file - unchanged]
-        pass  # Placeholder - use original Tab 2 code
-    
-    # ==================== TAB 3: VISCOSITY MODELING (NEW) ====================
+        if not analyzer.results_history:
+            st.info("💡 No computed data available. Please perform calculations in the 'Enthalpy Computation' tab first.")
+            st.stop()
+        data_source = st.radio("Select data source:", ["Use computed results from Tab 1", "Upload external CSV file"], horizontal=True, key="tab2_data_source")
+        if data_source == "Use computed results from Tab 1":
+            result_options = [f"{i+1}. {res['name']} | {res['tdb_file']} | {res['temperature_range'][0]}-{res['temperature_range'][1]}K" for i, res in enumerate(analyzer.results_history)]
+            selected_result_idx = st.selectbox("Select computed result:", range(len(result_options)), format_func=lambda x: result_options[x], key="tab2_result_select")
+            result_data = analyzer.results_history[selected_result_idx]['data']
+            T_data = result_data['Temperature_K'].values
+            H_data = result_data['Enthalpy_J_mol'].values
+            material_name = analyzer.results_history[selected_result_idx]['name']
+            composition_ref = analyzer.results_history[selected_result_idx]['composition']
+            composition_type_ref = analyzer.results_history[selected_result_idx].get('composition_type', 'Mole Fraction')
+            st.markdown('<div class="info-box">', unsafe_allow_html=True)
+            st.markdown("#### 📝 Composition Reference")
+            col_comp1, col_comp2 = st.columns(2)
+            with col_comp1:
+                display_type = st.radio("Display composition as:", ["Mole Fraction", "Weight Fraction"], horizontal=True, key="tab2_display_comp_type")
+            with col_comp2:
+                if display_type == "Weight Fraction" and composition_type_ref == "Mole Fraction":
+                    display_comp = analyzer.convert_composition(composition_ref, 'mole', 'weight')
+                elif display_type == "Mole Fraction" and composition_type_ref == "Weight Fraction":
+                    display_comp = analyzer.convert_composition(composition_ref, 'weight', 'mole')
+                else:
+                    display_comp = composition_ref
+                st.write("**Composition:**")
+                comp_text = ""
+                for element, fraction in display_comp.items():
+                    comp_text += f"• {element}: {fraction:.6f}\n"
+                st.text(comp_text)
+            st.markdown('</div>', unsafe_allow_html=True)
+            composition_for_fitting = composition_ref
+            composition_type_for_fitting = composition_type_ref
+        else:
+            uploaded_csv = st.file_uploader("Upload CSV with Temperature and Enthalpy columns", type=['csv'], key="tab2_uploader_csv")
+            if uploaded_csv is None:
+                st.info("Please upload a CSV file to continue")
+                st.stop()
+            try:
+                df_upload = pd.read_csv(uploaded_csv)
+                st.write("Preview of uploaded data:")
+                st.dataframe(df_upload.head(), width='stretch')
+                col1, col2 = st.columns(2)
+                with col1:
+                    temp_col = st.selectbox("Temperature column", df_upload.columns, key="tab2_temp_col")
+                with col2:
+                    enthalpy_col = st.selectbox("Enthalpy column (J/mol)", df_upload.columns, key="tab2_enthalpy_col")
+                T_data = df_upload[temp_col].values
+                H_data = df_upload[enthalpy_col].values
+                material_name = "Uploaded Data"
+                st.markdown('<div class="info-box">', unsafe_allow_html=True)
+                st.markdown("#### 📝 Composition Reference (Manual Input)")
+                col_man1, col_man2 = st.columns(2)
+                with col_man1:
+                    comp_type = st.radio("Input composition as:", ["Mole Fraction", "Weight Fraction"], horizontal=True, key="tab2_manual_comp_type")
+                with col_man2:
+                    elements = st.multiselect("Select elements:", sorted(PERIODIC_TABLE.keys()), default=['AL', 'CU', 'NI'], key="tab2_manual_elements")
+                if elements:
+                    composition_for_fitting = {}
+                    cols = st.columns(len(elements))
+                    for idx, element in enumerate(elements):
+                        with cols[idx]:
+                            fraction = st.number_input(f"{element}", 0.0, 1.0, 1.0/len(elements) if idx < len(elements)-1 else 0.0, 0.01, key=f"tab2_manual_comp_{element}")
+                            composition_for_fitting[element] = fraction
+                    if len(elements) > 1:
+                        total = sum(composition_for_fitting.values())
+                        if total < 1.0:
+                            last_element = elements[-1]
+                            composition_for_fitting[last_element] = 1.0 - total + composition_for_fitting.get(last_element, 0)
+                composition_type_for_fitting = comp_type
+                st.markdown('</div>', unsafe_allow_html=True)
+            except Exception as e:
+                st.error(f"Error reading CSV: {str(e)}")
+                st.stop()
+        st.markdown("---")
+        st.markdown("#### ⚙️ Fitting Parameters")
+        T_mid = np.median(T_data)
+        H_range = H_data.max() - H_data.min()
+        H_slope = H_range / (T_data.max() - T_data.min())
+        col_p1, col_p2 = st.columns(2)
+        with col_p1:
+            A1_guess = st.number_input("A₁ initial guess (J/mol·K)", -100.0, 100.0, float(min(50.0, max(5.0, H_slope * 0.7))), 0.1, help="Sensible heat coefficient for solid phase", key="tab2_A1_guess")
+            A2_guess = st.number_input("A₂ initial guess (J/mol·K)", -100.0, 100.0, float(min(30.0, max(1.0, H_slope * 0.3))), 0.1, help="Additional sensible heat coefficient for liquid phase", key="tab2_A2_guess")
+            Tm_guess = st.number_input("Tₘ initial guess (K)", float(T_data.min()), float(T_data.max()), float(T_mid), 1.0, help="Melting temperature", key="tab2_Tm_guess")
+        with col_p2:
+            DeltaHf_guess = st.number_input("ΔHf initial guess (J/mol)", -50000.0, 50000.0, float(min(30000.0, max(5000.0, H_range * 0.6))), 100.0, help="Heat of fusion", key="tab2_DeltaHf_guess")
+            k_guess = st.number_input("k initial guess (1/K)", 0.0001, 1.0, 0.01, 0.001, help="Sigmoid steepness parameter", key="tab2_k_guess")
+            H298_guess = st.number_input("H₂₉₈ initial guess (J/mol)", -50000.0, 50000.0, float(H_data.min() * 0.9), 100.0, help="Reference enthalpy at 298 K", key="tab2_H298_guess")
+        with st.expander("⚙️ Advanced Fitting Options", expanded=False):
+            col_adv1, col_adv2 = st.columns(2)
+            with col_adv1:
+                max_iterations = st.number_input("Maximum iterations", 100, 10000, 5000, 100, key="tab2_max_iter")
+                fit_method = st.selectbox("Fitting method", ["trf", "lm", "dogbox"], index=0, key="tab2_fit_method")
+            with col_adv2:
+                confidence_level = st.slider("Confidence level (%)", 90, 99, 95, 1, key="tab2_conf_level")
+                generate_report = st.checkbox("Generate detailed report", value=True, key="tab2_gen_report")
+        st.markdown("---")
+        fit_button = st.button("🎯 Perform Curve Fit", type="primary", width='stretch', key="tab2_fit_button")
+        if fit_button:
+            with st.spinner("Fitting curve to data..."):
+                try:
+                    initial_guess = [A1_guess, A2_guess, Tm_guess, DeltaHf_guess, k_guess, H298_guess]
+                    lower_bounds = [-100, -100, T_data.min(), 0, 1e-6, -1e6]
+                    upper_bounds = [100, 100, T_data.max(), 1e6, 1.0, 1e6]
+                    fit_params, pcov = curve_fit(analyzer.enthalpy_equation, T_data, H_data, p0=initial_guess,
+                                                 bounds=(lower_bounds, upper_bounds), method=fit_method, maxfev=max_iterations)
+                    A1_fit, A2_fit, Tm_fit, DeltaHf_fit, k_fit, H298_fit = fit_params
+                    T_fit = np.linspace(T_data.min(), T_data.max(), 1000)
+                    H_fit = analyzer.enthalpy_equation(T_fit, *fit_params)
+                    H_pred = analyzer.enthalpy_equation(T_data, *fit_params)
+                    residuals = H_data - H_pred
+                    ss_res = np.sum(residuals**2)
+                    ss_tot = np.sum((H_data - np.mean(H_data))**2)
+                    r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
+                    rmse = np.sqrt(np.mean(residuals**2))
+                    perr = np.sqrt(np.diag(pcov))
+                    confidence_intervals = [(fit_params[i] - 1.96*perr[i], fit_params[i] + 1.96*perr[i]) for i in range(len(fit_params))]
+                    molar_weight = analyzer.calculate_alloy_molar_weight(composition_for_fitting)
+                    fit_result = {
+                        'material_name': material_name,
+                        'coefficients': {'A1': A1_fit, 'A2': A2_fit, 'Tm': Tm_fit, 'DeltaHf': DeltaHf_fit, 'k': k_fit, 'H298': H298_fit},
+                        'confidence_intervals': {'A1': confidence_intervals[0], 'A2': confidence_intervals[1], 'Tm': confidence_intervals[2],
+                                                 'DeltaHf': confidence_intervals[3], 'k': confidence_intervals[4], 'H298': confidence_intervals[5]},
+                        'statistics': {'r_squared': r_squared, 'rmse': rmse, 'data_points': len(T_data), 'molar_weight_g_per_mol': molar_weight,
+                                       'residual_std': np.std(residuals), 'confidence_level': confidence_level},
+                        'composition': composition_for_fitting, 'composition_type': composition_type_for_fitting,
+                        'temperature_range': [float(T_data.min()), float(T_data.max())],
+                        'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'fitting_method': fit_method, 'max_iterations': max_iterations
+                    }
+                    existing_idx = -1
+                    for i, fit in enumerate(analyzer.fitting_results):
+                        if fit['material_name'] == material_name and fit['temperature_range'] == [float(T_data.min()), float(T_data.max())]:
+                            existing_idx = i
+                            break
+                    if existing_idx >= 0:
+                        analyzer.fitting_results[existing_idx] = fit_result
+                        st.info("↻ Updated existing fitting result")
+                    else:
+                        analyzer.fitting_results.append(fit_result)
+                    st.success(f"✅ Fitting completed! R² = {r_squared:.6f}, RMSE = {rmse:.2f} J/mol")
+                    fig = create_curve_fitting_visualization(T_data, H_data, T_fit, H_fit, fit_params, residuals, r_squared, rmse, material_name, composition_for_fitting, molar_weight, analyzer.plot_customizations)
+                    with st.container():
+                        st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+                        st.pyplot(fig)
+                        st.markdown('</div>', unsafe_allow_html=True)
+                    st.markdown("---")
+                    col_eq1, col_eq2 = st.columns(2)
+                    with col_eq1:
+                        st.markdown("#### 🧮 Molar Enthalpy Equation (J/mol)")
+                        st.latex(rf"H_{{molar}}(T) = {A1_fit:.4f} \cdot T + {A2_fit:.4f} \cdot \max(T - {Tm_fit:.2f}, 0) + {DeltaHf_fit:,.0f} \cdot \frac{{1}}{{1 + e^{{-{k_fit:.6f}(T - {Tm_fit:.2f})}}}} + {H298_fit:,.0f}")
+                    with col_eq2:
+                        st.markdown("#### 🧮 Specific Enthalpy Equation (J/kg)")
+                        st.latex(rf"H_{{specific}}(T) = \frac{{1}}{{{molar_weight:.4f} \times 10^{{-3}}}} \times \left[{A1_fit:.4f} \cdot T + {A2_fit:.4f} \cdot \max(T - {Tm_fit:.2f}, 0) + {DeltaHf_fit:,.0f} \cdot \frac{{1}}{{1 + e^{{-{k_fit:.6f}(T - {Tm_fit:.2f})}}}} + {H298_fit:,.0f}\right]")
+                    st.markdown('<div class="download-section">', unsafe_allow_html=True)
+                    st.markdown("#### 📥 Download Fitting Results")
+                    col_f1, col_f2, col_f3 = st.columns(3)
+                    with col_f1:
+                        coeff_df = pd.DataFrame([{'Material': material_name, 'A1_J_per_mol_K': A1_fit, 'A2_J_per_mol_K': A2_fit, 'Tm_K': Tm_fit,
+                                                  'DeltaHf_J_per_mol': DeltaHf_fit, 'k_1_per_K': k_fit, 'H298_J_per_mol': H298_fit,
+                                                  'Molar_Weight_g_per_mol': molar_weight, 'R_squared': r_squared, 'RMSE_J_per_mol': rmse,
+                                                  'Data_Points': len(T_data), 'Timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")}])
+                        timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+                        st.download_button("📄 Coefficients (CSV)", data=coeff_df.to_csv(index=False), file_name=f"fitting_coeffs_{material_name.replace(' ', '_')}_{timestamp_str}.csv", mime="text/csv", key=f"tab2_coeff_csv_{timestamp_str}")
+                    with col_f2:
+                        fitted_df = pd.DataFrame({'Temperature_K': T_fit, 'Enthalpy_Fitted_J_mol': H_fit, 'Enthalpy_Fitted_J_kg': analyzer.specific_enthalpy_equation(T_fit, *fit_params, molar_weight)})
+                        st.download_button("📄 Fitted Curve (CSV)", data=fitted_df.to_csv(index=False), file_name=f"fitted_curve_{material_name.replace(' ', '_')}_{timestamp_str}.csv", mime="text/csv", key=f"tab2_curve_csv_{timestamp_str}")
+                    with col_f3:
+                        json_data = json.dumps(fit_result, indent=4, default=str)
+                        st.download_button("📄 Full Results (JSON)", data=json_data, file_name=f"fitting_results_{material_name.replace(' ', '_')}_{timestamp_str}.json", mime="application/json", key=f"tab2_json_results_{timestamp_str}")
+                    st.markdown('</div>', unsafe_allow_html=True)
+                    if generate_report:
+                        with st.expander("📋 Detailed Fitting Report", expanded=False):
+                            st.markdown(f"""
+                            ### Fitting Report for {material_name}
+                            **Dataset Information:**\n- Data points: {len(T_data)}\n- Temperature range: {T_data.min():.1f} K to {T_data.max():.1f} K\n- Enthalpy range: {H_data.min():,.0f} to {H_data.max():,.0f} J/mol
+                            **Fitting Parameters:**\n- Method: {fit_method}\n- Maximum iterations: {max_iterations}\n- Initial guess: {initial_guess}
+                            **Residual Analysis:**\n- Residual standard deviation: {np.std(residuals):.2f} J/mol\n- Residual mean: {np.mean(residuals):.2f} J/mol\n- Maximum residual: {np.max(np.abs(residuals)):.2f} J/mol
+                            **Goodness of Fit:**\n- R²: {r_squared:.6f}\n- Adjusted R²: {1 - (1 - r_squared) * (len(T_data) - 1) / (len(T_data) - len(fit_params) - 1):.6f}\n- RMSE: {rmse:.2f} J/mol\n- MAE: {np.mean(np.abs(residuals)):.2f} J/mol
+                            **Physical Interpretation:**\n- Melting temperature (Tₘ): {Tm_fit:.1f} K\n- Heat of fusion (ΔHf): {DeltaHf_fit:,.0f} J/mol\n- Sensible heat coefficients: A₁ = {A1_fit:.3f}, A₂ = {A2_fit:.3f} J/(mol·K)\n- Transition sharpness (k): {k_fit:.6f} 1/K
+                            """)
+                except Exception as e:
+                    st.error(f"❌ Fitting error: {str(e)}")
+                    st.exception(e)
+
+    # ==================== TAB 3: Viscosity Modeling ====================
     with tab3:
         st.markdown('<div class="sub-header">💧 Dynamic Viscosity Modeling</div>', unsafe_allow_html=True)
         st.markdown("Compute and fit dynamic viscosity using melting temperature from enthalpy analysis")
-        
         if not analyzer.fitting_results:
             st.warning("⚠️ No enthalpy fitting results available. Please perform enthalpy curve fitting in Tab 2 first.")
             st.info("💡 The viscosity model uses the melting temperature (Tm) obtained from enthalpy fitting.")
         else:
-            # Select enthalpy fit result to use Tm
-            st.markdown("#### 📋 Select Enthalpy Fit Result")
-            fit_options = [
-                f"{i+1}. {fit['material_name']} | Tm = {fit['coefficients']['Tm']:.2f} K"
-                for i, fit in enumerate(analyzer.fitting_results)
-            ]
-            
-            selected_fit_idx = st.selectbox(
-                "Choose enthalpy fit (Tm will be used for viscosity model):",
-                range(len(fit_options)),
-                format_func=lambda x: fit_options[x],
-                key="tab3_fit_select"
-            )
-            
+            fit_options = [f"{i+1}. {fit['material_name']} | Tm = {fit['coefficients']['Tm']:.2f} K" for i, fit in enumerate(analyzer.fitting_results)]
+            selected_fit_idx = st.selectbox("Choose enthalpy fit (Tm will be used for viscosity model):", range(len(fit_options)), format_func=lambda x: fit_options[x], key="tab3_fit_select")
             selected_fit = analyzer.fitting_results[selected_fit_idx]
             Tm_from_enthalpy = selected_fit['coefficients']['Tm']
             material_name = selected_fit['material_name']
             composition = selected_fit['composition']
-            
             st.success(f"✅ Selected: {material_name} with Tm = {Tm_from_enthalpy:.2f} K")
-            
-            # Viscosity computation options
             st.markdown("#### ⚙️ Viscosity Model Parameters")
-            
             col_visc1, col_visc2 = st.columns(2)
-            
             with col_visc1:
                 st.markdown("**Temperature Range:**")
-                T_start_visc = st.number_input("Start (K)", 100, 5000, 
-                                               int(Tm_from_enthalpy - 50), 10,
-                                               key="tab3_T_start")
-                T_end_visc = st.number_input("End (K)", T_start_visc+10, 6000,
-                                            int(Tm_from_enthalpy + 50), 10,
-                                            key="tab3_T_end")
-                T_step_visc = st.number_input("Step (K)", 1, 100, 5,
-                                             key="tab3_T_step")
-            
+                T_start_visc = st.number_input("Start (K)", 100, 5000, int(Tm_from_enthalpy - 50), 10, key="tab3_T_start")
+                T_end_visc = st.number_input("End (K)", T_start_visc+10, 6000, int(Tm_from_enthalpy + 50), 10, key="tab3_T_end")
+                T_step_visc = st.number_input("Step (K)", 1, 100, 5, key="tab3_T_step")
             with col_visc2:
                 st.markdown("**Mushy Zone Parameters:**")
-                delta_T_s = st.number_input("Solid side width (K)", 0.1, 10.0, 1.0, 0.1,
-                                           key="tab3_delta_Ts")
-                delta_T_l = st.number_input("Liquid side width (K)", 0.1, 10.0, 2.0, 0.1,
-                                           key="tab3_delta_Tl")
-                n_exponent = st.number_input("Asymptotic exponent (n)", 1.0, 5.0, 2.5, 0.1,
-                                            key="tab3_n_exp")
-            
-            # Reference coefficients (Sn-0.7Cu)
+                delta_T_s = st.number_input("Solid side width (K)", 0.1, 10.0, 1.0, 0.1, key="tab3_delta_Ts")
+                delta_T_l = st.number_input("Liquid side width (K)", 0.1, 10.0, 2.0, 0.1, key="tab3_delta_Tl")
+                n_exponent = st.number_input("Asymptotic exponent (n)", 1.0, 5.0, 2.5, 0.1, key="tab3_n_exp")
             st.markdown("#### 🔧 Viscosity Coefficients")
-            
             col_coeff1, col_coeff2 = st.columns(2)
-            
             with col_coeff1:
                 st.markdown("**Liquid Phase (Arrhenius):**")
-                A_l = st.number_input("A_l (Pa·s)", 1e-6, 1.0, 9.79e-4, 1e-6,
-                                     format="%.6f", key="tab3_A_l")
-                E_a = st.number_input("E_a (J/mol)", 100.0, 100000.0, 2962.997, 10.0,
-                                     key="tab3_E_a")
-            
+                A_l = st.number_input("A_l (Pa·s)", 1e-6, 1.0, 9.79e-4, 1e-6, format="%.6f", key="tab3_A_l")
+                E_a = st.number_input("E_a (J/mol)", 100.0, 100000.0, 2962.997, 10.0, key="tab3_E_a")
             with col_coeff2:
                 st.markdown("**Mushy Zone:**")
-                A_ls = st.number_input("A_ls (Pa·s)", 1e-6, 10.0, 0.091, 0.001,
-                                      format="%.6f", key="tab3_A_ls")
-                mu_solid_eff = st.number_input("μ_solid (Pa·s)", 10.0, 10000.0, 1000.0, 10.0,
-                                              key="tab3_mu_solid")
-            
-            # Generate viscosity data
+                A_ls = st.number_input("A_ls (Pa·s)", 1e-6, 10.0, 0.091, 0.001, format="%.6f", key="tab3_A_ls")
+                mu_solid_eff = st.number_input("μ_solid (Pa·s)", 10.0, 10000.0, 1000.0, 10.0, key="tab3_mu_solid")
             if st.button("🚀 Compute Viscosity", type="primary", key="tab3_compute"):
                 with st.spinner("Computing dynamic viscosity..."):
                     try:
                         T_visc = np.arange(T_start_visc, T_end_visc + T_step_visc, T_step_visc)
-                        
-                        # Compute viscosity
-                        mu_visc, phi_s = analyzer.unified_viscosity_model(
-                            T_visc, A_l, E_a, A_ls, Tm_from_enthalpy,
-                            delta_T_s, delta_T_l, n_exponent, mu_solid_eff
-                        )
-                        
-                        df_visc = pd.DataFrame({
-                            'Temperature_K': T_visc,
-                            'Viscosity_Pa_s': mu_visc,
-                            'Solid_Fraction': phi_s
-                        })
-                        
+                        mu_visc, phi_s = analyzer.unified_viscosity_model(T_visc, A_l, E_a, A_ls, Tm_from_enthalpy, delta_T_s, delta_T_l, n_exponent, mu_solid_eff)
+                        df_visc = pd.DataFrame({'Temperature_K': T_visc, 'Viscosity_Pa_s': mu_visc, 'Solid_Fraction': phi_s})
                         st.success(f"✅ Viscosity computed for {len(df_visc)} temperature points")
-                        
-                        # Display visualization
-                        fig_visc = analyzer.create_viscosity_visualization(
-                            df_visc, None, Tm_from_enthalpy,
-                            analyzer.plot_customizations, material_name
-                        )
-                        
+                        fig_visc = analyzer.create_viscosity_visualization(df_visc, None, Tm_from_enthalpy, analyzer.plot_customizations, material_name)
                         with st.container():
                             st.markdown('<div class="plot-container">', unsafe_allow_html=True)
                             st.pyplot(fig_visc)
                             st.markdown('</div>', unsafe_allow_html=True)
-                        
-                        # Display key metrics
                         col_m1, col_m2, col_m3 = st.columns(3)
                         with col_m1:
                             st.metric("Min Viscosity", f"{mu_visc.min():.2e} Pa·s")
@@ -1376,89 +1799,41 @@ def main():
                             st.metric("Max Viscosity", f"{mu_visc.max():.2e} Pa·s")
                         with col_m3:
                             st.metric("At Tm", f"{mu_visc[np.argmin(np.abs(T_visc - Tm_from_enthalpy))]:.2e} Pa·s")
-                        
-                        # Store for fitting
-                        st.session_state['current_viscosity_data'] = {
-                            'df': df_visc,
-                            'Tm': Tm_from_enthalpy,
-                            'material_name': material_name,
-                            'composition': composition,
-                            'coefficients': {
-                                'A_l': A_l,
-                                'E_a': E_a,
-                                'A_ls': A_ls
-                            }
-                        }
-                        
-                        # Download options
+                        st.session_state['current_viscosity_data'] = {'df': df_visc, 'Tm': Tm_from_enthalpy, 'material_name': material_name,
+                                                                      'composition': composition, 'coefficients': {'A_l': A_l, 'E_a': E_a, 'A_ls': A_ls}}
                         st.markdown('<div class="download-section">', unsafe_allow_html=True)
                         st.markdown("#### 📥 Download Viscosity Data")
-                        
                         csv_data = df_visc.to_csv(index=False)
                         timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
-                        
-                        st.download_button(
-                            "📄 Download CSV",
-                            data=csv_data,
-                            file_name=f"viscosity_{material_name.replace(' ', '_')}_{timestamp_str}.csv",
-                            mime="text/csv",
-                            key=f"tab3_visc_csv_{timestamp_str}"
-                        )
+                        st.download_button("📄 Download CSV", data=csv_data, file_name=f"viscosity_{material_name.replace(' ', '_')}_{timestamp_str}.csv", mime="text/csv", key=f"tab3_visc_csv_{timestamp_str}")
                         st.markdown('</div>', unsafe_allow_html=True)
-                        
                     except Exception as e:
                         st.error(f"❌ Error computing viscosity: {str(e)}")
                         st.exception(e)
-            
-            # Viscosity fitting section
             st.markdown("---")
             st.markdown("#### 📊 Fit Viscosity Data")
-            
             if 'current_viscosity_data' in st.session_state:
                 visc_data = st.session_state['current_viscosity_data']
-                
-                fit_option = st.radio(
-                    "Fitting mode:",
-                    ["Use Tm from enthalpy (fixed)", "Fit Tm as parameter"],
-                    horizontal=True,
-                    key="tab3_fit_option"
-                )
-                
+                fit_option = st.radio("Fitting mode:", ["Use Tm from enthalpy (fixed)", "Fit Tm as parameter"], horizontal=True, key="tab3_fit_option")
                 col_fit1, col_fit2 = st.columns(2)
-                
                 with col_fit1:
-                    A_l_guess = st.number_input("A_l guess", 1e-6, 1.0, 
-                                               visc_data['coefficients']['A_l']*0.9, 1e-6,
-                                               format="%.6f", key="tab3_A_l_guess")
-                    E_a_guess = st.number_input("E_a guess", 100.0, 100000.0,
-                                               visc_data['coefficients']['E_a']*0.9, 10.0,
-                                               key="tab3_E_a_guess")
-                
+                    A_l_guess = st.number_input("A_l guess", 1e-6, 1.0, visc_data['coefficients']['A_l']*0.9, 1e-6, format="%.6f", key="tab3_A_l_guess")
+                    E_a_guess = st.number_input("E_a guess", 100.0, 100000.0, visc_data['coefficients']['E_a']*0.9, 10.0, key="tab3_E_a_guess")
                 with col_fit2:
-                    A_ls_guess = st.number_input("A_ls guess", 1e-6, 10.0,
-                                                visc_data['coefficients']['A_ls']*0.9, 0.001,
-                                                format="%.6f", key="tab3_A_ls_guess")
-                
+                    A_ls_guess = st.number_input("A_ls guess", 1e-6, 10.0, visc_data['coefficients']['A_ls']*0.9, 0.001, format="%.6f", key="tab3_A_ls_guess")
                 if st.button("🎯 Fit Viscosity Model", type="primary", key="tab3_fit_visc"):
                     with st.spinner("Fitting viscosity model..."):
                         try:
                             T_data = visc_data['df']['Temperature_K'].values
                             mu_data = visc_data['df']['Viscosity_Pa_s'].values
-                            
                             if fit_option == "Use Tm from enthalpy (fixed)":
                                 Tm_fixed = visc_data['Tm']
                                 initial_guess = [A_l_guess, E_a_guess, A_ls_guess]
                             else:
                                 Tm_fixed = None
                                 initial_guess = [A_l_guess, E_a_guess, A_ls_guess, visc_data['Tm']]
-                            
-                            fit_results = analyzer.fit_viscosity_data(
-                                T_data, mu_data, Tm_fixed, initial_guess
-                            )
-                            
+                            fit_results = analyzer.fit_viscosity_data(T_data, mu_data, Tm_fixed, initial_guess)
                             st.success(f"✅ Viscosity fitting completed! R² = {fit_results['r_squared']:.6f}")
-                            
-                            # Display results
                             col_r1, col_r2, col_r3 = st.columns(3)
                             with col_r1:
                                 st.metric("R²", f"{fit_results['r_squared']:.6f}")
@@ -1466,122 +1841,405 @@ def main():
                                 st.metric("RMSE", f"{fit_results['rmse']:.2e} Pa·s")
                             with col_r3:
                                 st.metric("Tm (fitted)", f"{fit_results['Tm']:.2f} K")
-                            
-                            # Create visualization with fit
                             T_fit = np.linspace(T_data.min(), T_data.max(), 200)
-                            mu_fit = analyzer.viscosity_equation_for_fitting(
-                                T_fit, fit_results['A_l'], fit_results['E_a'],
-                                fit_results['A_ls'], fit_results['Tm']
-                            )
-                            
-                            df_fit = pd.DataFrame({
-                                'Temperature_K': T_fit,
-                                'Viscosity_Pa_s': mu_fit,
-                                'Solid_Fraction': analyzer.solid_fraction(
-                                    T_fit, fit_results['Tm']
-                                )
-                            })
-                            
-                            fig_fit = analyzer.create_viscosity_visualization(
-                                df_fit, fit_results, fit_results['Tm'],
-                                analyzer.plot_customizations, material_name
-                            )
-                            
+                            mu_fit = analyzer.viscosity_equation_for_fitting(T_fit, fit_results['A_l'], fit_results['E_a'], fit_results['A_ls'], fit_results['Tm'])
+                            df_fit = pd.DataFrame({'Temperature_K': T_fit, 'Viscosity_Pa_s': mu_fit, 'Solid_Fraction': analyzer.solid_fraction(T_fit, fit_results['Tm'])})
+                            fig_fit = analyzer.create_viscosity_visualization(df_fit, fit_results, fit_results['Tm'], analyzer.plot_customizations, material_name)
                             with st.container():
                                 st.markdown('<div class="plot-container">', unsafe_allow_html=True)
                                 st.pyplot(fig_fit)
                                 st.markdown('</div>', unsafe_allow_html=True)
-                            
-                            # Display equations
                             st.markdown("#### 🧮 Viscosity Equations")
-                            
                             col_eq1, col_eq2 = st.columns(2)
-                            
                             with col_eq1:
                                 st.markdown("**Liquid Phase (Arrhenius):**")
-                                st.latex(rf"""
-                                \mu_{{liquid}}(T) = {A_l_guess:.2e} \cdot \exp\left(\frac{{{E_a_guess:.1f}}}{{8.314 \cdot T}}\right)
-                                """)
-                            
+                                st.latex(rf"\mu_{{liquid}}(T) = {A_l_guess:.2e} \cdot \exp\left(\frac{{{E_a_guess:.1f}}}{{8.314 \cdot T}}\right)")
                             with col_eq2:
                                 st.markdown("**Mushy Zone (Asymptotic):**")
-                                st.latex(rf"""
-                                \mu_{{mushy}}(T) = \mu(T) \cdot (1 - \phi_s)^{{-{n_exponent}}}
-                                """)
-                            
-                            # Store fitting results
-                            fit_result_dict = {
-                                'material_name': material_name,
-                                'Tm_from_enthalpy': visc_data['Tm'],
-                                'coefficients': {
-                                    'A_l': fit_results['A_l'],
-                                    'E_a': fit_results['E_a'],
-                                    'A_ls': fit_results['A_ls'],
-                                    'Tm': fit_results['Tm']
-                                },
-                                'statistics': {
-                                    'r_squared': fit_results['r_squared'],
-                                    'rmse': fit_results['rmse']
-                                },
-                                'composition': composition,
-                                'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            }
-                            
+                                st.latex(rf"\mu_{{mushy}}(T) = \mu(T) \cdot (1 - \phi_s)^{{-{n_exponent}}}")
+                            fit_result_dict = {'material_name': material_name, 'Tm_from_enthalpy': visc_data['Tm'],
+                                               'coefficients': {'A_l': fit_results['A_l'], 'E_a': fit_results['E_a'], 'A_ls': fit_results['A_ls'], 'Tm': fit_results['Tm']},
+                                               'statistics': {'r_squared': fit_results['r_squared'], 'rmse': fit_results['rmse']},
+                                               'composition': composition, 'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
                             analyzer.viscosity_fitting_results.append(fit_result_dict)
-                            
-                            # Download fitted parameters
                             st.markdown('<div class="download-section">', unsafe_allow_html=True)
                             st.markdown("#### 📥 Download Fitted Parameters")
-                            
-                            params_df = pd.DataFrame([{
-                                'Material': material_name,
-                                'A_l_Pa_s': fit_results['A_l'],
-                                'E_a_J_per_mol': fit_results['E_a'],
-                                'A_ls_Pa_s': fit_results['A_ls'],
-                                'Tm_K': fit_results['Tm'],
-                                'R_squared': fit_results['r_squared'],
-                                'RMSE_Pa_s': fit_results['rmse'],
-                                'Timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            }])
-                            
-                            st.download_button(
-                                "📄 Download Parameters (CSV)",
-                                data=params_df.to_csv(index=False),
-                                file_name=f"viscosity_params_{material_name.replace(' ', '_')}_{timestamp_str}.csv",
-                                mime="text/csv",
-                                key=f"tab3_params_csv_{timestamp_str}"
-                            )
+                            params_df = pd.DataFrame([{'Material': material_name, 'A_l_Pa_s': fit_results['A_l'], 'E_a_J_per_mol': fit_results['E_a'],
+                                                       'A_ls_Pa_s': fit_results['A_ls'], 'Tm_K': fit_results['Tm'], 'R_squared': fit_results['r_squared'],
+                                                       'RMSE_Pa_s': fit_results['rmse'], 'Timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")}])
+                            timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+                            st.download_button("📄 Download Parameters (CSV)", data=params_df.to_csv(index=False), file_name=f"viscosity_params_{material_name.replace(' ', '_')}_{timestamp_str}.csv", mime="text/csv", key=f"tab3_params_csv_{timestamp_str}")
                             st.markdown('</div>', unsafe_allow_html=True)
-                            
                         except Exception as e:
                             st.error(f"❌ Fitting error: {str(e)}")
                             st.exception(e)
             else:
                 st.info("👈 Compute viscosity first to enable fitting")
-    
+
     # ==================== TAB 4: Multi-Material Comparison ====================
     with tab4:
-        # ... (existing comparison code)
         st.markdown('<div class="sub-header">🔄 Multi-Material Comparison</div>', unsafe_allow_html=True)
-        pass  # Placeholder - use original Tab 3 code
-    
+        if not analyzer.results_history:
+            st.info("💡 No computed data available for comparison. Please perform calculations in the 'Enthalpy Computation' tab first.")
+            st.stop()
+        st.markdown("#### 📚 Calculation History")
+        if analyzer.history_thumbnails:
+            n_thumbnails = len(analyzer.history_thumbnails)
+            n_cols = 4
+            n_rows = (n_thumbnails + n_cols - 1) // n_cols
+            for row in range(n_rows):
+                cols = st.columns(n_cols)
+                for col in range(n_cols):
+                    idx = row * n_cols + col
+                    if idx < n_thumbnails:
+                        thumb_info = analyzer.history_thumbnails[idx]
+                        with cols[col]:
+                            st.markdown(f"**{thumb_info['name']}**")
+                            st.markdown(f"<small>{thumb_info['timestamp']}</small>", unsafe_allow_html=True)
+                            if thumb_info['thumbnail']:
+                                st.image(f"data:image/png;base64,{thumb_info['thumbnail']}", width='stretch')
+        st.markdown("#### ✅ Select Materials to Compare")
+        selection_options = [(i, f"{res['name']} | {res['tdb_file']} | {len(res['data'])} pts") for i, res in enumerate(analyzer.results_history)]
+        selected_labels = st.multiselect("Select up to 8 materials for comparison:", [label for _, label in selection_options],
+                                         default=[selection_options[i][1] for i in range(min(3, len(selection_options)))], max_selections=8, key="tab4_material_select")
+        if not selected_labels:
+            st.warning("⚠️ Please select at least one material for comparison")
+            st.stop()
+        selected_indices = [idx for idx, label in selection_options if label in selected_labels]
+        col_opt1, col_opt2 = st.columns(2)
+        with col_opt1:
+            show_plotly = st.checkbox("Show interactive plot (Plotly)", value=True, key="tab4_plotly")
+            normalize_data = st.checkbox("Normalize enthalpy to zero at start", value=False, key="tab4_normalize")
+        with col_opt2:
+            compare_heat_capacity = st.checkbox("Compare heat capacities", value=True, key="tab4_heat_cap")
+            show_statistics = st.checkbox("Show detailed statistics", value=True, key="tab4_stats")
+        if st.button("📊 Generate Comparison", type="primary", key="tab4_gen_comparison"):
+            with st.spinner("Generating comparison visualization..."):
+                fig = create_comparison_visualization(analyzer, selected_indices, analyzer.plot_customizations)
+                if fig:
+                    with st.container():
+                        st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+                        st.pyplot(fig)
+                        st.markdown('</div>', unsafe_allow_html=True)
+        if show_plotly and selected_indices:
+            st.markdown("#### 📈 Interactive Visualization")
+            result = analyzer.results_history[selected_indices[0]]
+            data = result['data']
+            composition = result['composition']
+            material_name = result['name']
+            fitted_params = None
+            for fit_result in analyzer.fitting_results:
+                if fit_result['material_name'] == material_name:
+                    fitted_params = fit_result['coefficients']
+                    break
+            plotly_fig = create_interactive_plotly_visualization(data, composition, material_name, fitted_params)
+            st.plotly_chart(plotly_fig, width='stretch')
+        if show_statistics:
+            st.markdown("---")
+            st.markdown("#### 📊 Comparison Summary Table")
+            summary_data = []
+            for idx in selected_indices:
+                res = analyzer.results_history[idx]
+                data = res['data']
+                min_h = data['Enthalpy_J_mol'].min()
+                max_h = data['Enthalpy_J_mol'].max()
+                delta_h = max_h - min_h
+                avg_slope = delta_h / (data['Temperature_K'].max() - data['Temperature_K'].min())
+                if len(data) > 1 and 'Heat_Capacity_J_per_mol_K' in data.columns:
+                    heat_capacity = data['Heat_Capacity_J_per_mol_K']
+                    avg_cp = heat_capacity.mean()
+                    max_cp = heat_capacity.max()
+                else:
+                    avg_cp = 0
+                    max_cp = 0
+                Tm = None
+                for fit_result in analyzer.fitting_results:
+                    if fit_result['material_name'] == res['name']:
+                        Tm = fit_result['coefficients'].get('Tm')
+                        break
+                summary_data.append({
+                    'Material': res['name'], 'TDB File': res['tdb_file'], 'Phases': ', '.join(res['phases'][:3]) + ('...' if len(res['phases']) > 3 else ''),
+                    'Temp Range (K)': f"{res['temperature_range'][0]}-{res['temperature_range'][1]}", 'Data Points': len(data),
+                    'Min H (J/mol)': f"{min_h:,.0f}", 'Max H (J/mol)': f"{max_h:,.0f}", 'ΔH (J/mol)': f"{delta_h:,.0f}",
+                    'Avg dH/dT (J/mol·K)': f"{avg_slope:.2f}", 'Avg Cₚ (J/mol·K)': f"{avg_cp:.2f}", 'Max Cₚ (J/mol·K)': f"{max_cp:.2f}", 'Tm (K)': f"{Tm:.1f}" if Tm else "N/A"
+                })
+            summary_df = pd.DataFrame(summary_data)
+            st.markdown('<div class="data-table">', unsafe_allow_html=True)
+            st.dataframe(summary_df, width='stretch', hide_index=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('<div class="download-section">', unsafe_allow_html=True)
+        st.markdown("#### 📥 Download Comparison Data")
+        col_c1, col_c2 = st.columns(2)
+        with col_c1:
+            combined_data = {'Temperature_K': analyzer.results_history[selected_indices[0]]['data']['Temperature_K'].values}
+            for idx in selected_indices:
+                res = analyzer.results_history[idx]
+                name_clean = res['name'].replace(' ', '_').replace('-', '_')
+                combined_data[f"{name_clean}_H_molar"] = res['data']['Enthalpy_J_mol'].values
+                combined_data[f"{name_clean}_H_specific"] = res['data']['Enthalpy_J_kg'].values
+                if 'Heat_Capacity_J_per_mol_K' in res['data'].columns:
+                    combined_data[f"{name_clean}_Heat_Capacity"] = res['data']['Heat_Capacity_J_per_mol_K'].values
+            combined_df = pd.DataFrame(combined_data)
+            timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+            st.download_button("📄 Combined Data (CSV)", data=combined_df.to_csv(index=False), file_name=f"multi_material_comparison_{timestamp_str}.csv", mime="text/csv", key=f"tab4_combined_csv_{timestamp_str}")
+        with col_c2:
+            if show_statistics:
+                timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+                st.download_button("📄 Summary Table (CSV)", data=summary_df.to_csv(index=False), file_name=f"comparison_summary_{timestamp_str}.csv", mime="text/csv", key=f"tab4_summary_csv_{timestamp_str}")
+        st.markdown('</div>', unsafe_allow_html=True)
+
     # ==================== TAB 5: Phase Diagram Analysis ====================
     with tab5:
-        # ... (existing phase diagram code)
         st.markdown('<div class="sub-header">📈 Phase Diagram Analysis</div>', unsafe_allow_html=True)
-        pass  # Placeholder - use original Tab 4 code
-    
+        if not analyzer.results_history:
+            st.info("💡 No computed data available. Please perform calculations in the 'Enthalpy Computation' tab first.")
+            st.stop()
+        st.markdown("#### 🔍 Select Materials for Phase Analysis")
+        selection_options = [(i, f"{res['name']} | {res['tdb_file']} | {len(res['data'])} pts") for i, res in enumerate(analyzer.results_history)]
+        selected_labels = st.multiselect("Select materials for phase analysis:", [label for _, label in selection_options],
+                                         default=[selection_options[i][1] for i in range(min(3, len(selection_options)))], max_selections=6, key="tab5_material_select")
+        if not selected_labels:
+            st.warning("⚠️ Please select at least one material for analysis")
+            st.stop()
+        selected_indices = [idx for idx, label in selection_options if label in selected_labels]
+        col_ana1, col_ana2 = st.columns(2)
+        with col_ana1:
+            show_derivatives = st.checkbox("Show derivatives", value=True, key="tab5_derivatives")
+            show_cumulative = st.checkbox("Show cumulative enthalpy", value=False, key="tab5_cumulative")
+        with col_ana2:
+            normalize_plots = st.checkbox("Normalize temperature range", value=False, key="tab5_normalize")
+            highlight_transitions = st.checkbox("Highlight phase transitions", value=True, key="tab5_transitions")
+        if st.button("📈 Generate Phase Diagram", type="primary", key="tab5_gen_phase"):
+            with st.spinner("Generating phase diagram..."):
+                fig = create_phase_diagram_visualization(analyzer, selected_indices, analyzer.plot_customizations)
+                if fig:
+                    with st.container():
+                        st.markdown('<div class="plot-container">', unsafe_allow_html=True)
+                        st.pyplot(fig)
+                        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("---")
+        st.markdown("#### 🔬 Phase Transition Analysis")
+        transition_data = []
+        for idx in selected_indices:
+            res = analyzer.results_history[idx]
+            data = res['data']
+            name = res['name']
+            if len(data) > 1:
+                dT = data['Temperature_K'].diff()
+                dH = data['Enthalpy_J_mol'].diff()
+                heat_capacity = dH / dT
+                if len(heat_capacity) > 10:
+                    heat_capacity_smooth = heat_capacity.rolling(window=5, center=True, min_periods=1).mean()
+                    from scipy.signal import find_peaks
+                    peaks, properties = find_peaks(heat_capacity_smooth.iloc[1:].values, height=heat_capacity_smooth.mean(), distance=len(heat_capacity_smooth)//10)
+                    if len(peaks) > 0:
+                        for peak_idx in peaks:
+                            T_transition = data['Temperature_K'].iloc[peak_idx + 1]
+                            Cp_peak = heat_capacity_smooth.iloc[peak_idx + 1]
+                            transition_data.append({'Material': name, 'Transition Temp (K)': f"{T_transition:.1f}", 'Peak Cₚ (J/mol·K)': f"{Cp_peak:.2f}", 'Strength': 'Strong' if Cp_peak > 2*heat_capacity_smooth.mean() else 'Weak'})
+        if transition_data:
+            transition_df = pd.DataFrame(transition_data)
+            st.markdown('<div class="data-table">', unsafe_allow_html=True)
+            st.dataframe(transition_df, width='stretch', hide_index=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+        else:
+            st.info("No clear phase transitions detected in the selected materials.")
+
     # ==================== TAB 6: Visualization Customization ====================
     with tab6:
-        # ... (existing customization code)
         st.markdown('<div class="sub-header">🎨 Visualization Customization</div>', unsafe_allow_html=True)
-        pass  # Placeholder - use original Tab 5 code
-    
+        st.markdown("Customize the appearance of all plots in the application.")
+        cust_tab1, cust_tab2, cust_tab3 = st.tabs(["📊 Plot Settings", "🎨 Color & Style", "📐 Layout & Export"])
+        with cust_tab1:
+            st.markdown("#### 📊 Line & Marker Settings")
+            col_cust1, col_cust2 = st.columns(2)
+            with col_cust1:
+                analyzer.plot_customizations['curve_thickness'] = st.slider("Curve Thickness", 0.5, 5.0, value=float(analyzer.plot_customizations.get('curve_thickness', 2.5)), step=0.1, key="tab6_curve_thickness")
+                analyzer.plot_customizations['box_thickness'] = st.slider("Box/Spine Thickness", 0.5, 5.0, value=float(analyzer.plot_customizations.get('box_thickness', 1.0)), step=0.1, key="tab6_box_thickness")
+                analyzer.plot_customizations['marker_size'] = st.slider("Marker Size", 2, 15, value=int(analyzer.plot_customizations.get('marker_size', 6)), step=1, key="tab6_marker_size")
+                analyzer.plot_customizations['grid_alpha'] = st.slider("Grid Transparency", 0.0, 1.0, value=float(analyzer.plot_customizations.get('grid_alpha', 0.3)), step=0.05, key="tab6_grid_alpha")
+            with col_cust2:
+                analyzer.plot_customizations['font_size'] = st.slider("Font Size", 8, 20, value=int(analyzer.plot_customizations.get('font_size', 12)), step=1, key="tab6_font_size")
+                analyzer.plot_customizations['title_font_size'] = st.slider("Title Font Size", 10, 24, value=int(analyzer.plot_customizations.get('title_font_size', 14)), step=1, key="tab6_title_font_size")
+                analyzer.plot_customizations['legend_font_size'] = st.slider("Legend Font Size", 8, 16, value=int(analyzer.plot_customizations.get('legend_font_size', 10)), step=1, key="tab6_legend_font_size")
+                analyzer.plot_customizations['legend_location'] = st.selectbox("Legend Location", ['best', 'upper right', 'upper left', 'lower left', 'lower right', 'right', 'center left', 'center right', 'lower center', 'upper center', 'center'],
+                                                                               index=['best', 'upper right', 'upper left', 'lower left', 'lower right', 'right', 'center left', 'center right', 'lower center', 'upper center', 'center'].index(analyzer.plot_customizations.get('legend_location', 'best')), key="tab6_legend_location")
+        with cust_tab2:
+            st.markdown("#### 🎨 Color & Style Settings")
+            col_style1, col_style2 = st.columns(2)
+            with col_style1:
+                analyzer.plot_customizations['colormap'] = st.selectbox("Select Colormap", COLORMAPS, index=COLORMAPS.index(analyzer.plot_customizations.get('colormap', 'viridis')), key="tab6_colormap")
+                fig_cmap, ax_cmap = plt.subplots(figsize=(8, 1))
+                try:
+                    cmap = plt.get_cmap(analyzer.plot_customizations['colormap'])
+                    gradient = np.linspace(0, 1, 256).reshape(1, -1)
+                    ax_cmap.imshow(gradient, aspect='auto', cmap=cmap, extent=[0, 1, 0, 1])
+                except:
+                    cmap = plt.get_cmap('viridis')
+                    gradient = np.linspace(0, 1, 256).reshape(1, -1)
+                    ax_cmap.imshow(gradient, aspect='auto', cmap=cmap, extent=[0, 1, 0, 1])
+                ax_cmap.set_xticks([])
+                ax_cmap.set_yticks([])
+                ax_cmap.set_title(f"Preview: {analyzer.plot_customizations['colormap']}", fontsize=10)
+                st.pyplot(fig_cmap)
+                plt.close(fig_cmap)
+                available_styles = plt.style.available
+                analyzer.plot_customizations['plot_style'] = st.selectbox("Plot Style", ['default'] + available_styles, index=0, key="tab6_plot_style")
+            with col_style2:
+                analyzer.plot_customizations['tick_size'] = st.slider("Tick Label Size", 8, 16, value=int(analyzer.plot_customizations.get('tick_size', 11)), step=1, key="tab6_tick_size")
+                analyzer.plot_customizations['label_fontsize'] = st.slider("Axis Label Size", 8, 16, value=int(analyzer.plot_customizations.get('label_fontsize', 12)), step=1, key="tab6_label_fontsize")
+                analyzer.plot_customizations['annotation_fontsize'] = st.slider("Annotation Font Size", 6, 14, value=int(analyzer.plot_customizations.get('annotation_fontsize', 9)), step=1, key="tab6_annotation_fontsize")
+                analyzer.plot_customizations['transparent_bg'] = st.checkbox("Transparent Background", value=analyzer.plot_customizations.get('transparent_bg', False), key="tab6_transparent_bg")
+        with cust_tab3:
+            st.markdown("#### 📐 Layout & Export Settings")
+            col_layout1, col_layout2 = st.columns(2)
+            with col_layout1:
+                analyzer.plot_customizations['figure_width'] = st.slider("Figure Width (inches)", 8.0, 20.0, value=float(analyzer.plot_customizations.get('figure_width', 14.0)), step=0.5, key="tab6_figure_width")
+                analyzer.plot_customizations['figure_height'] = st.slider("Figure Height (inches)", 6.0, 16.0, value=float(analyzer.plot_customizations.get('figure_height', 10.0)), step=0.5, key="tab6_figure_height")
+            with col_layout2:
+                analyzer.plot_customizations['dpi'] = st.slider("Figure DPI", 72, 300, value=int(analyzer.plot_customizations.get('dpi', 150)), step=10, key="tab6_dpi")
+                export_format = st.selectbox("Default Export Format", ['PNG', 'PDF', 'SVG', 'EPS'], index=0, key="tab6_export_format")
+        st.markdown("---")
+        col_save1, col_save2, col_save3 = st.columns(3)
+        with col_save1:
+            if st.button("💾 Save Customizations", width='stretch', key="tab6_save_cust"):
+                st.success("✅ Customizations saved!")
+                st.rerun()
+        with col_save2:
+            if st.button("🔄 Reset to Defaults", width='stretch', key="tab6_reset_cust"):
+                analyzer.plot_customizations = {'curve_thickness': 2.5, 'box_thickness': 1.0, 'font_size': 12, 'title_font_size': 14, 'legend_font_size': 10, 'legend_location': 'best',
+                                                'colormap': 'viridis', 'marker_size': 6, 'grid_alpha': 0.3, 'figure_width': 14, 'figure_height': 10, 'tick_size': 11, 'label_fontsize': 12,
+                                                'plot_style': 'default', 'dpi': 150, 'transparent_bg': False, 'annotation_fontsize': 9}
+                st.success("✅ Customizations reset to defaults!")
+                st.rerun()
+        with col_save3:
+            if st.button("🎨 Apply to All Plots", width='stretch', key="tab6_apply_cust"):
+                st.info("Customizations will be applied to all new plots.")
+                st.rerun()
+        st.markdown("---")
+        st.markdown("#### 📤 Export/Import Customizations")
+        col_exp1, col_exp2 = st.columns(2)
+        with col_exp1:
+            json_custom = json.dumps(analyzer.plot_customizations, indent=4)
+            timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+            st.download_button("📄 Export Settings (JSON)", data=json_custom, file_name=f"plot_customizations_{timestamp_str}.json", mime="application/json", key=f"tab6_export_settings_{timestamp_str}")
+        with col_exp2:
+            uploaded_custom = st.file_uploader("Import settings from JSON", type=['json'], key="tab6_upload_custom")
+            if uploaded_custom is not None:
+                try:
+                    imported = json.load(uploaded_custom)
+                    analyzer.plot_customizations.update(imported)
+                    st.success("✅ Customizations imported successfully!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error importing customizations: {str(e)}")
+
     # ==================== TAB 7: Help & Settings ====================
     with tab7:
-        # ... (existing help code)
         st.markdown('<div class="sub-header">ℹ️ Help & Application Settings</div>', unsafe_allow_html=True)
-        pass  # Placeholder - use original Tab 6 code
+        col_h1, col_h2 = st.columns([1, 1.2])
+        with col_h1:
+            st.markdown("#### 📖 User Guide")
+            with st.expander("🚀 Quick Start", expanded=True):
+                st.markdown("""
+                1. **Enthalpy Computation Tab** – Select/upload TDB file, choose elements and composition, define temperature range, click Compute.
+                2. **Curve Fitting Tab** – Select computed data, adjust fitting parameters, get fitted equations.
+                3. **Viscosity Modeling Tab** – Use Tm from enthalpy fit, set model parameters, compute and fit viscosity.
+                4. **Multi-Material Comparison** – Compare enthalpy curves and properties.
+                5. **Phase Diagram Analysis** – Analyze phase transitions.
+                6. **Visualization Customization** – Customize plot appearance.
+                """)
+            with st.expander("🔬 N-Component System", expanded=False):
+                st.markdown("Enter fractions for n-1 components; the nth is auto-calculated. Supports mole and weight fractions with automatic conversion.")
+            with st.expander("📊 Fitting Equation", expanded=False):
+                st.markdown(r"H(T) = A₁·T + A₂·max(T-Tₘ,0) + ΔHf·[1/(1+exp(-k·(T-Tₘ)))] + H₂₉₈")
+            with st.expander("💧 Viscosity Model", expanded=False):
+                st.markdown("Arrhenius for liquid: μ = A_l·exp(E_a/(R·T)). Asymptotic for mushy: μ = μ(T)·(1-φ_s)^(-n). Solid fraction piecewise linear.")
+        with col_h2:
+            st.markdown("#### ⚙️ Application Management")
+            col_stat1, col_stat2, col_stat3 = st.columns(3)
+            with col_stat1:
+                st.metric("Computed Results", len(analyzer.results_history))
+            with col_stat2:
+                st.metric("Fitting Results", len(analyzer.fitting_results))
+            with col_stat3:
+                st.metric("Viscosity Fits", len(analyzer.viscosity_fitting_results))
+            col_data1, col_data2 = st.columns(2)
+            with col_data1:
+                if st.button("🗑️ Clear All Data", type="secondary", width='stretch', key="tab7_clear_data"):
+                    analyzer.results_history = []
+                    analyzer.fitting_results = []
+                    analyzer.viscosity_fitting_results = []
+                    analyzer.history_thumbnails = []
+                    st.session_state.simulation_cache = {}
+                    st.session_state.widget_state = {}
+                    st.success("✅ All session data cleared!")
+                    st.rerun()
+            with col_data2:
+                if st.button("💾 Export Session", type="secondary", width='stretch', key="tab7_export_session"):
+                    session_data = {'results_history': analyzer.results_history, 'fitting_results': analyzer.fitting_results,
+                                    'viscosity_fitting_results': analyzer.viscosity_fitting_results, 'simulation_cache': st.session_state.simulation_cache,
+                                    'customizations': analyzer.plot_customizations, 'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                    'version': 'Thermodynamic Enthalpy & Viscosity Analyzer Pro v4.0'}
+                    json_data = json.dumps(session_data, indent=4, default=str)
+                    timestamp_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    st.download_button("📥 Download Session", data=json_data, file_name=f"enthalpy_analyzer_session_{timestamp_str}.json", mime="application/json", key=f"tab7_session_download_{timestamp_str}")
+            st.markdown("##### 🗄️ Database Management")
+            tdb_files = analyzer.get_available_tdb_files()
+            if tdb_files:
+                st.write(f"**Found {len(tdb_files)} TDB files:**")
+                for tdb in tdb_files:
+                    col_db1, col_db2, col_db3 = st.columns([3, 1, 1])
+                    with col_db1:
+                        file_path = analyzer.database_dir / tdb
+                        size_kb = os.path.getsize(file_path) / 1024
+                        st.caption(f"`{tdb}` ({size_kb:.1f} KB)")
+                    with col_db2:
+                        if st.button("ℹ️", key=f"tab7_info_{tdb}"):
+                            st.info(f"**{tdb}**\nSize: {size_kb:.1f} KB\nPath: {file_path}")
+                    with col_db3:
+                        if st.button("🗑️", key=f"tab7_delete_{tdb}"):
+                            try:
+                                os.remove(file_path)
+                                st.success(f"Deleted {tdb}")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error: {str(e)}")
+            else:
+                st.info(f"No TDB files in `{analyzer.database_dir}`")
+            st.markdown("---")
+            st.markdown("##### 🧪 Periodic Table Explorer")
+            selected_element = st.selectbox("Explore element properties:", sorted(PERIODIC_TABLE.keys()), format_func=lambda x: f"{PERIODIC_TABLE[x][0]} - {PERIODIC_TABLE[x][1]}", key="tab7_element_explorer")
+            if selected_element:
+                elem_data = PERIODIC_TABLE[selected_element]
+                col_elem1, col_elem2 = st.columns(2)
+                with col_elem1:
+                    st.markdown(f"**{elem_data[1]} ({elem_data[0]})**\n\n• **Atomic Number:** {elem_data[2]}\n• **Molar Weight:** {elem_data[3]} g/mol\n• **Density:** {elem_data[4]} g/cm³")
+                with col_elem2:
+                    st.markdown(f"**Physical Properties:**\n\n• **Melting Point:** {elem_data[5]} K\n• **Boiling Point:** {elem_data[6]} K\n• **Group:** {elem_data[7]}\n• **Period:** {elem_data[8]}\n• **Block:** {elem_data[9]}")
+        st.markdown("---")
+        st.markdown("##### ℹ️ About")
+        st.markdown("""
+        **Thermodynamic Enthalpy & Viscosity Analyzer Pro v4.0**
+
+        A comprehensive tool for thermodynamic and transport property calculations using the CALPHAD method.
+
+        **Key Features:**
+        - Enthalpy computation from TDB files
+        - Curve fitting with sigmoid-based equation
+        - Viscosity modeling (Arrhenius + asymptotic)
+        - Multi-material comparison and phase analysis
+        - Interactive Plotly visualizations
+        - Extensive export options (CSV, DAT, JSON)
+
+        **Core Libraries:** pycalphad, scipy, xarray, matplotlib, plotly, streamlit
+
+        **Session State Management:** Results are cached and persist across tab switches and downloads.
+        """)
+
+    # Footer
+    st.markdown("---")
+    st.markdown(f'<div class="session-info">🔥 Thermodynamic Enthalpy & Viscosity Analyzer Pro v4.0 | Session: {len(analyzer.results_history)} results, {len(analyzer.fitting_results)} fits, {len(analyzer.viscosity_fitting_results)} viscosity fits | Cache: {len(st.session_state.simulation_cache)} simulations | {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
